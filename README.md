@@ -1,14 +1,14 @@
-# 🚨 Uptime Monitor SaaS
+# Uptime Monitor SaaS
 
-A full-stack uptime and incident monitoring application that allows users to monitor websites and APIs, track uptime, measure response times, and detect outages.
+A full-stack uptime and incident monitoring application that allows users to monitor websites and APIs, track uptime, measure response times, detect outages, and automatically manage incidents.
 
-This project is being built as a hands-on learning project for **FastAPI, Python, databases, background jobs, system design, SRE concepts, and AWS**.
+This project is being built as a hands-on learning project for **FastAPI, Python, databases, background jobs, system design, SRE concepts, availability assurance, observability, and AWS**.
 
-The long-term goal is to deploy the application to AWS and use AWS services to handle monitoring, scheduling, storage, logging, and notifications.
+The long-term goal is to deploy the application to AWS and use AWS services to handle monitoring, scheduling, storage, logging, observability, and notifications.
 
 ---
 
-## 🎯 Project Goal
+# 🎯 Project Goal
 
 Build a SaaS platform where a user can:
 
@@ -19,7 +19,8 @@ Build a SaaS platform where a user can:
 * Measure response times
 * Track historical uptime
 * Detect outages
-* Track incidents
+* Automatically create incidents
+* Automatically resolve incidents when services recover
 * Receive outage notifications
 * View monitoring data through a web dashboard
 
@@ -29,7 +30,7 @@ Eventually, users should be able to sign up and monitor their own applications t
 
 # 🛠️ Current Tech Stack
 
-### Backend
+## Backend
 
 * Python
 * FastAPI
@@ -39,14 +40,14 @@ Eventually, users should be able to sign up and monitor their own applications t
 * HTTPX
 * APScheduler
 
-### Frontend
+## Frontend
 
 Planned:
 
 * React
 * Tailwind CSS
 
-### Cloud / Infrastructure
+## Cloud / Infrastructure
 
 Planned:
 
@@ -89,20 +90,26 @@ The project is intentionally being built in small pieces rather than starting wi
 * Created API routes
 * Learned how FastAPI routes work
 * Used Swagger/OpenAPI documentation at `/docs`
+* Added dependency injection for database sessions
+* Added HTTP exception handling
 
-## Monitor API
+---
 
-Created the initial Monitor API.
+# 🖥️ Monitor API
 
-Implemented:
+The Monitor API allows monitors to be created, viewed, updated, and deleted.
+
+## Current Routes
 
 ```text
-POST /monitors
-GET  /monitors
-GET  /monitors/{monitor_id}
+POST   /monitors
+GET    /monitors
+GET    /monitors/{monitor_id}
+PATCH  /monitors/{monitor_id}
+DELETE /monitors/{monitor_id}
 ```
 
-The monitor model supports:
+## Monitor Model
 
 ```text
 Monitor
@@ -113,54 +120,139 @@ Monitor
 └── expected_status
 ```
 
-Users can configure how frequently an individual monitor should be checked.
+Each monitor can have its own:
+
+* Name
+* URL
+* Check interval
+* Expected HTTP status code
+
+For example:
+
+```text
+Name:       My API
+URL:        https://example.com
+Interval:   10 seconds
+Expected:   200
+```
 
 ---
 
-## Database
+# ✏️ Monitor Updates
 
-* Decided to use SQLite for development
+A monitor can now be updated without deleting and recreating it.
+
+The update endpoint is:
+
+```text
+PATCH /monitors/{monitor_id}
+```
+
+Monitor properties that can be updated include:
+
+```text
+name
+url
+check_interval
+expected_status
+```
+
+This allows monitoring configuration to change while the application is running.
+
+---
+
+# 🗑️ Monitor Deletion
+
+Monitors can also be deleted through:
+
+```text
+DELETE /monitors/{monitor_id}
+```
+
+The API verifies that the monitor exists before deleting it.
+
+---
+
+# 🗄️ Database
+
+SQLite is currently being used for local development.
+
+Implemented:
+
 * Installed SQLModel
 * Created SQLite database
 * Created `Monitor` SQLModel
 * Created `CheckResult` SQLModel
+* Created `Incident` SQLModel
 * Connected FastAPI to SQLite
 * Created database sessions
-* Successfully saved monitors to the database
-* Successfully retrieved monitors from SQLite
+* Successfully saved monitors
+* Successfully retrieved monitors
 * Successfully stored monitoring results
+* Successfully stored incidents
+* Added timestamps to monitoring records
 
----
-
-## Monitoring Foundation
-
-* Installed HTTPX
-* Created initial URL checking functionality
-* Learned how to make HTTP requests to external websites
-* Learned how to determine whether a website is UP/DOWN based on HTTP status codes
-* Measure HTTP response time
-* Handle HTTP request failures
-* Store successful and failed checks in the database
-
-A manual monitoring endpoint was also created:
+The current database contains three primary tables:
 
 ```text
-POST /monitors/{monitor_id}/check
+Monitor
+CheckResult
+Incident
 ```
-
-This allows an individual monitor to be checked manually through the API.
 
 ---
 
-# ⚙️ Automatic Monitoring
+# 🌐 Monitoring Foundation
 
-APScheduler has now been installed and integrated into the FastAPI application.
+HTTPX is used to make HTTP requests to monitored applications.
 
-The application automatically loads monitors from SQLite when FastAPI starts and creates a scheduled job for each monitor.
+The monitoring system can:
 
-Each monitor uses its own `check_interval`.
+* Send HTTP requests
+* Determine whether an application is UP or DOWN
+* Compare the returned HTTP status against the expected status
+* Measure response time
+* Detect HTTP failures
+* Detect request failures
+* Store successful checks
+* Store failed checks
+* Record error messages
 
-For example:
+Response time is measured in milliseconds.
+
+Example:
+
+```text
+youtube: UP 200 227.44 ms
+```
+
+This means:
+
+```text
+Monitor:       youtube
+Status:        UP
+HTTP Status:   200
+Response Time: 227.44 ms
+```
+
+---
+
+# ⏱️ Automatic Monitoring
+
+APScheduler has been integrated into the FastAPI application.
+
+When the application starts, it:
+
+1. Connects to SQLite
+2. Loads existing monitors
+3. Creates a scheduled job for each monitor
+4. Uses the monitor's configured `check_interval`
+5. Automatically checks the URL
+6. Saves the result to the database
+
+Each monitor can use a different monitoring interval.
+
+Example:
 
 ```text
 Google
@@ -173,39 +265,43 @@ My API
 └── Check every 30 seconds
 ```
 
-The scheduler architecture is currently:
+The monitoring interval is configured per monitor.
+
+---
+
+# 🔄 Monitoring Architecture
 
 ```text
                     FastAPI
                        │
                        ▼
-                  APScheduler
+                 APScheduler
                        │
-            ┌──────────┼──────────┐
-            ▼          ▼          ▼
-        Monitor 1  Monitor 2  Monitor 3
-          10 sec     20 sec     30 sec
-            │          │          │
-            ▼          ▼          ▼
-        Check URL  Check URL  Check URL
-            │          │          │
-            └──────────┼──────────┘
-                       ▼
-                  CheckResult
-                       │
-                       ▼
-                    SQLite
+             ┌─────────┼─────────┐
+             ▼         ▼         ▼
+         Monitor 1  Monitor 2  Monitor 3
+          10 sec      20 sec      30 sec
+             │          │          │
+             ▼          ▼          ▼
+         Check URL  Check URL  Check URL
+             │          │          │
+             └──────────┼──────────┘
+                        ▼
+                   CheckResult
+                        │
+                        ▼
+                     SQLite
 ```
 
-This means monitoring is no longer dependent on manually calling the `/check` endpoint.
+Monitoring is now automatic rather than dependent on manually calling an endpoint.
 
 ---
 
 # 📊 Check Results
 
-A `CheckResult` model has been created to store the results of monitoring checks.
+A `CheckResult` record is created for every monitoring attempt.
 
-Current data includes:
+## CheckResult Model
 
 ```text
 CheckResult
@@ -214,8 +310,31 @@ CheckResult
 ├── status_code
 ├── response_time
 ├── is_up
-└── error_message
+├── error_message
+└── checked_at
 ```
+
+The `checked_at` field records when the monitoring check occurred.
+
+Example:
+
+```text
+2026-09-03 04:09:39
+```
+
+Response times are stored in milliseconds.
+
+Example:
+
+```text
+200
+227.44 ms
+UP
+```
+
+---
+
+# 📚 Monitoring History
 
 Monitoring results can be retrieved using:
 
@@ -241,106 +360,198 @@ Monitor #1
 🟢 200   141ms
 ```
 
-The application is now capable of continuously checking a URL and building a historical record of its availability.
+This creates a historical record that can eventually be used for uptime calculations, charts, and availability reporting.
 
 ---
 
-# ⏭️ Next Steps
+# 🚨 Incident Detection
 
-## Phase 1 — Complete Monitor CRUD
+The application now automatically detects monitoring failures and creates incidents.
 
-* Finish monitor update functionality
-* Add `PATCH /monitors/{monitor_id}`
-* Add `DELETE /monitors/{monitor_id}`
-* Improve validation
-* Add proper `404` handling
+When a monitor returns an unexpected status, the system checks whether an open incident already exists.
 
----
-
-# Phase 2 — Improve Monitoring Data
-
-The next monitoring improvement is to add timestamps to every check.
-
-Planned field:
-
-```text
-checked_at
-```
-
-Updated model:
-
-```text
-CheckResult
-├── id
-├── monitor_id
-├── status_code
-├── response_time
-├── is_up
-├── error_message
-└── checked_at
-```
-
-This will allow the application to determine exactly when each check occurred.
-
-This data will eventually be used for:
-
-* Uptime calculations
-* Historical graphs
-* Response-time trends
-* Incident timelines
-* Availability percentages
-
----
-
-# Phase 3 — Incident Detection
-
-Build logic that recognizes an outage.
+If there is no existing open incident, a new incident is created.
 
 Example:
 
 ```text
-200
-200
-500
-500
+Expected: 200
+
+Actual:
 500
 ```
 
-↓
+The system creates:
 
 ```text
 🚨 INCIDENT CREATED
 ```
 
-Then when the application recovers:
+The incident stores:
 
 ```text
+Incident
+├── id
+├── monitor_id
+├── started_at
+├── resolved_at
+├── status
+└── reason
+```
+
+Example reason:
+
+```text
+Expected status 200, got 500
+```
+
+---
+
+# 🔁 Incident Prevention of Duplicates
+
+The monitoring system checks for an existing open incident before creating a new one.
+
+This prevents every failed monitoring request from creating another incident.
+
+For example:
+
+```text
+500
+500
+500
+500
+```
+
+Results in:
+
+```text
+1 Open Incident
+```
+
+rather than:
+
+```text
+4 Separate Incidents
+```
+
+---
+
+# ✅ Automatic Incident Resolution
+
+When a monitor recovers and returns its expected status, the application checks for an open incident.
+
+If an open incident exists, it is automatically resolved.
+
+Example:
+
+```text
+500
 500
 500
 200
 ```
 
-↓
+Results in:
 
 ```text
+🚨 INCIDENT CREATED
+
+...
+
 ✅ INCIDENT RESOLVED
 ```
 
-Tasks:
+The incident records both:
 
-* Create `Incident` model
-* Detect consecutive failures
-* Create incidents automatically
-* Track incident start time
-* Track incident resolution time
-* Calculate outage duration
-* Add incident API routes
+```text
+started_at
+resolved_at
+```
+
+This provides the foundation for calculating outage duration.
 
 ---
 
-# Phase 4 — Authentication
+# 🖥️ Terminal Monitoring Output
 
-Add users so the application can become a real SaaS product.
+The monitoring system prints useful information directly to the terminal.
+
+Example:
+
+```text
+youtube: UP 200 227.44 ms
+Check completed for monitor: youtube
+```
+
+When an outage occurs:
+
+```text
+INCIDENT CREATED: youtube
+youtube: DOWN 500 210.52 ms
+```
+
+When the application recovers:
+
+```text
+Incident resolved: youtube
+youtube: UP 200 190.21 ms
+```
+
+This provides basic operational visibility while the application is running locally.
+
+---
+
+# 🔌 Request Failure Handling
+
+The application also handles situations where an HTTP request cannot successfully reach the monitored application.
+
+Examples include:
+
+* Connection failures
+* Timeouts
+* DNS problems
+* Other HTTPX request errors
+
+Failed requests are stored as `CheckResult` records with:
+
+```text
+status_code = None
+is_up = False
+error_message = <error>
+```
+
+This allows the monitoring history to distinguish between HTTP failures and request-level failures.
+
+---
+
+# 📖 API Documentation
+
+FastAPI automatically provides interactive API documentation.
+
+Once the backend is running:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Swagger can be used to:
+
+* Create monitors
+* View monitors
+* Update monitors
+* Delete monitors
+* View check results
+* Test API routes
+
+---
+
+# 🔐 Phase 4 — Authentication
+
+Authentication is still planned.
+
+The goal is to add users so the application can become a real SaaS product.
+
+Planned functionality:
 
 * Create User model
 * Create registration endpoint
@@ -361,9 +572,9 @@ GET  /auth/me
 
 ---
 
-# Phase 5 — React Dashboard
+# ⚛️ Phase 5 — React Dashboard
 
-Build the frontend.
+The frontend will eventually provide a web dashboard for managing monitors and viewing monitoring data.
 
 Planned pages:
 
@@ -380,7 +591,7 @@ Dashboard
    └── Incidents
 ```
 
-Dashboard should eventually show:
+The dashboard should eventually display:
 
 ```text
 My Website
@@ -406,16 +617,20 @@ Planned features:
 * Login page
 * Dashboard
 * Create monitor form
+* Edit monitor form
+* Delete monitor functionality
 * Monitor status indicators
 * Response-time charts
 * Uptime percentage
+* Check history
 * Incident history
+* Incident status
 
 ---
 
-# Phase 6 — Notifications
+# 📧 Phase 6 — Notifications
 
-Notify users when their application goes down.
+The next stage will be notifying users when their application goes down.
 
 Potential architecture:
 
@@ -435,23 +650,23 @@ Notification service
 📧 Email
 ```
 
-Tasks:
+Planned functionality:
 
 * Email notification
 * Recovery notification
 * Notification preferences
 * Prevent duplicate alerts
-* Add alert cooldowns
+* Alert cooldowns
 
 ---
 
 # ☁️ Phase 7 — AWS Deployment
 
-Once the application works locally, begin migrating it to AWS.
+Once the local application is stable, the project will begin migrating toward AWS.
 
-The goal is to understand **why each AWS service is useful**, not just deploy the application.
+The goal is to understand **why each AWS service is useful**, not simply deploy the application.
 
-### Current Local Architecture
+## Current Local Architecture
 
 ```text
 FastAPI
@@ -463,23 +678,27 @@ APScheduler
 HTTPX
    ↓
 CheckResult
+   ↓
+Incident
 ```
 
-### Planned AWS Architecture
+## Planned AWS Architecture
 
 ```text
 React
    ↓
 CloudFront
    ↓
-AWS infrastructure
+AWS Infrastructure
    ↓
 FastAPI
    ↓
 RDS PostgreSQL
 ```
 
-Monitoring:
+---
+
+# 🔄 Planned AWS Monitoring Architecture
 
 ```text
 EventBridge
@@ -494,7 +713,11 @@ Check customer application
 RDS
 ```
 
-Observability:
+The goal is eventually to move monitoring workloads away from the local APScheduler implementation and into scalable cloud infrastructure.
+
+---
+
+# 👀 Planned Observability
 
 ```text
 Application
@@ -503,7 +726,11 @@ Application
 CloudWatch
 ```
 
-Notifications:
+AWS CloudWatch will eventually be used for application logs, metrics, and operational visibility.
+
+---
+
+# 📬 Planned Notification Architecture
 
 ```text
 Incident
@@ -519,7 +746,7 @@ Customer
 
 # ☁️ AWS Learning Goals
 
-This project should provide hands-on practice with:
+This project will provide hands-on practice with:
 
 * EC2
 * EBS
@@ -539,7 +766,9 @@ This project should provide hands-on practice with:
 * CloudFront
 * ECS/Fargate
 
-Not every service needs to be part of the final production architecture. Each service should be added when there is a legitimate reason to use it.
+Not every service needs to be part of the final production architecture.
+
+Each AWS service should be introduced when there is a legitimate architectural reason to use it.
 
 ---
 
@@ -556,6 +785,10 @@ Database
        ↓
 Background Jobs
        ↓
+HTTP Monitoring
+       ↓
+Incident Management
+       ↓
 Networking
        ↓
 Cloud Infrastructure
@@ -571,16 +804,19 @@ The project is also providing hands-on experience with concepts related to **ava
 
 * Health checks
 * Monitoring intervals
+* HTTP status monitoring
 * Response-time measurement
 * Failure detection
 * Historical check data
 * Automated background jobs
 * Incident management
+* Incident resolution
 * Observability
+* Availability monitoring
 
 The goal isn't just to learn how to deploy an application.
 
-The goal is to understand **how a real production application operates in the cloud.**
+The goal is to understand **how a real production application operates and how engineers detect and respond to failures.**
 
 ---
 
@@ -625,7 +861,7 @@ Business
 
 **Current stage:** Local FastAPI + SQLite + APScheduler development
 
-### Current capabilities
+## Current Capabilities
 
 ```text
 Create Monitor
@@ -644,26 +880,46 @@ Measure Response Time
       ↓
 Store CheckResult
       ↓
+Record Check Timestamp
+      ↓
+Detect Failure
+      ↓
+Create Incident
+      ↓
+Continue Monitoring
+      ↓
+Detect Recovery
+      ↓
+Resolve Incident
+      ↓
 Retrieve Check History
 ```
 
-### Next immediate task
+The application can currently monitor a configured URL automatically, store monitoring results, detect outages, create incidents, and resolve incidents when the monitored service recovers.
+
+---
+
+# 🎯 Next Immediate Tasks
 
 ```text
-Add checked_at timestamp
+Improve Monitor Validation
        ↓
-Improve monitoring history
+Improve Incident Logic
        ↓
-Build automatic incident detection
+Add Incident API Routes
        ↓
-Create Incident model
+Build Monitoring History API
        ↓
-Detect outages
+Build React Dashboard
        ↓
-Automatically resolve incidents
+Add Authentication
+       ↓
+Add Notifications
+       ↓
+Containerize Application
+       ↓
+Deploy to AWS
 ```
-
-The project is currently being developed locally before introducing the AWS architecture.
 
 ---
 
@@ -686,14 +942,20 @@ Instead of immediately deploying a large cloud architecture, each layer is being
       ↓
 6. Incident Detection
       ↓
-7. Authentication
+7. Incident Resolution
       ↓
-8. Frontend
+8. Monitor CRUD
       ↓
-9. Notifications
+9. Authentication
       ↓
-10. AWS Infrastructure
+10. Frontend
+      ↓
+11. Notifications
+      ↓
+12. AWS Infrastructure
 ```
 
 The objective is to understand **why each component exists and how the components interact**, rather than simply following a tutorial or copying a pre-built architecture.
+
+The project is being developed locally first so that the underlying monitoring, database, scheduling, and incident-management concepts are understood before introducing cloud infrastructure.
 
