@@ -9,6 +9,7 @@ class Monitor(SQLModel, table=True):
     url: str 
     check_interval: int
     expected_status: int
+    user_id: int = Field(foreign_key="user.id")
 
 class CheckResult(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -28,3 +29,29 @@ class Incident(SQLModel, table=True):
     resolved_at: Optional[datetime] = None
     status: str = Field(default="open")
     reason: Optional[str] = None
+
+class UserCreate(SQLModel):
+    username: str
+    email: str
+    password: str
+
+class UserResponse(SQLModel):
+    id: int 
+    username: str
+    email: str 
+    role: str
+
+class UserLogin(SQLModel):
+    email: str
+    password: str
+
+class TokenResponse(SQLModel):
+    access_token: str
+    token_type: str
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True)
+    email: str = Field(index=True, unique=True)
+    hashed_password: str
+    role: str = Field(default="help_desk", index=True)

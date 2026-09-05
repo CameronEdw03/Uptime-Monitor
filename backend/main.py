@@ -1,4 +1,3 @@
-
 from datetime import datetime
 
 import httpx
@@ -6,13 +5,30 @@ import time
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from database import create_db_and_tables, get_session
-from models import Monitor, CheckResult, Incident
+from models import (
+    Monitor,
+    CheckResult,
+    Incident,
+    UserCreate,
+    UserResponse,
+    UserLogin,
+    TokenResponse,
+    User
+)
 from sqlmodel import Session, select
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
+from security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user
+)
 
 
 app = FastAPI()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,6 +42,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 class MonitorCreate(BaseModel):
     name: str
@@ -66,13 +83,15 @@ def on_startup():
 @app.post("/monitors")
 def create_monitor(
     monitor: MonitorCreate,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
     db_monitor = Monitor(
         name=monitor.name,
         url=monitor.url,
         check_interval=monitor.check_interval,
-        expected_status=monitor.expected_status
+        expected_status=monitor.expected_status,
+        user_id=current_user.id
     )
 
     session.add(db_monitor)
@@ -93,16 +112,29 @@ def create_monitor(
 
 
 @app.get("/monitors")
-def read_monitors(session: Session = Depends(get_session)):
-    return session.exec(select(Monitor)).all()
+def read_monitors(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    return session.exec(
+        select(Monitor).where(
+            Monitor.user_id == current_user.id
+        )
+    ).all()
 
 
 @app.get("/monitors/{monitor_id}")
 def read_monitor(
     monitor_id: int,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
-    monitor = session.get(Monitor, monitor_id)
+    monitor = session.exec(
+        select(Monitor).where(
+            Monitor.id == monitor_id,
+            Monitor.user_id == current_user.id
+        )
+    ).first()
 
     if not monitor:
         raise HTTPException(
@@ -117,9 +149,15 @@ def read_monitor(
 def update_monitor(
     monitor_id: int,
     monitor_update: MonitorCreate,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
-    monitor = session.get(Monitor, monitor_id)
+    monitor = session.exec(
+        select(Monitor).where(
+            Monitor.id == monitor_id,
+            Monitor.user_id == current_user.id
+        )
+    ).first()
 
     if not monitor:
         raise HTTPException(
@@ -149,9 +187,15 @@ def update_monitor(
 def create_check_result(
     monitor_id: int,
     check_result: CheckResult,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
-    monitor = session.get(Monitor, monitor_id)
+    monitor = session.exec(
+        select(Monitor).where(
+            Monitor.id == monitor_id,
+            Monitor.user_id == current_user.id
+        )
+    ).first()
 
     if not monitor:
         raise HTTPException(
@@ -177,9 +221,15 @@ def create_check_result(
 @app.get("/monitors/{monitor_id}/check_results")
 def read_check_results(
     monitor_id: int,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
-    monitor = session.get(Monitor, monitor_id)
+    monitor = session.exec(
+        select(Monitor).where(
+            Monitor.id == monitor_id,
+            Monitor.user_id == current_user.id
+        )
+    ).first()
 
     if not monitor:
         raise HTTPException(
@@ -195,13 +245,25 @@ def read_check_results(
 
 @app.get("/check_results")
 def read_all_check_results(
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
-    return session.exec(select(CheckResult)).all()
+    monitor_ids = session.exec(
+        select(Monitor.id).where(
+            Monitor.user_id == current_user.id
+        )
+    ).all()
+
+    if not monitor_ids:
+        return []
+
+    return session.exec(
+        select(CheckResult)
+        .where(CheckResult.monitor_id.in_(monitor_ids))
+    ).all()
 
 
 def check_monitor(monitor_id: int):
-
     session = next(get_session())
 
     try:
@@ -250,7 +312,6 @@ def check_monitor(monitor_id: int):
             ).first()
 
             if not is_up:
-
                 if not open_incident:
                     incident = Incident(
                         monitor_id=monitor.id,
@@ -277,7 +338,6 @@ def check_monitor(monitor_id: int):
                     )
 
             else:
-
                 if open_incident:
                     open_incident.status = "resolved"
                     open_incident.resolved_at = datetime.utcnow()
@@ -306,7 +366,6 @@ def check_monitor(monitor_id: int):
         )
 
     except httpx.RequestError as e:
-
         end_time = time.perf_counter()
         response_time = (end_time - start_time) * 1000
 
@@ -372,15 +431,26 @@ def check_monitor(monitor_id: int):
         f"{monitor.name}"
     )
 
-@app.delete("/monitors/{monitor_id}")
-def delete_monitor(monitor_id: int, session: Session = Depends(get_session)):
-    monitor = session.get(Monitor, monitor_id)
 
-    if not monitor: 
+@app.delete("/monitors/{monitor_id}")
+def delete_monitor(
+    monitor_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    monitor = session.exec(
+        select(Monitor).where(
+            Monitor.id == monitor_id,
+            Monitor.user_id == current_user.id
+        )
+    ).first()
+
+    if not monitor:
         raise HTTPException(
             status_code=404,
             detail="Monitor not found"
         )
+
     scheduler.remove_job(f"monitor_{monitor.id}")
 
     session.delete(monitor)
@@ -389,4 +459,76 @@ def delete_monitor(monitor_id: int, session: Session = Depends(get_session)):
     return {
         "message": "Monitor deleted successfully",
         "monitor_id": monitor_id
+    }
+
+
+@app.post("/users", response_model=UserResponse)
+def create_user(
+    user_data: UserCreate,
+    session: Session = Depends(get_session),
+):
+    existing_email = (
+        session.query(User)
+        .filter(User.email == user_data.email)
+        .first()
+    )
+
+    if existing_email:
+        raise HTTPException(
+            status_code=409,
+            detail="Email is already registered",
+        )
+
+    existing_username = (
+        session.query(User)
+        .filter(User.username == user_data.username)
+        .first()
+    )
+
+    if existing_username:
+        raise HTTPException(
+            status_code=409,
+            detail="Username is already taken",
+        )
+
+    user = User(
+        username=user_data.username,
+        email=user_data.email,
+        hashed_password=hash_password(user_data.password),
+    )
+
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    return user
+
+
+@app.post("/login", response_model=TokenResponse)
+def login_user(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    session: Session = Depends(get_session),
+):
+    user = (
+        session.query(User)
+        .filter(User.email == form_data.username)
+        .first()
+    )
+
+    if not user or not verify_password(
+        form_data.password,
+        user.hashed_password
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password",
+        )
+
+    access_token = create_access_token(
+        data={"sub": str(user.id)}
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
     }
