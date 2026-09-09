@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+httpx
+pydantic
+sqlmodel
+apscheduler
+python-jose[cryptography]
+pwdlib[argon2]
+python-multipart

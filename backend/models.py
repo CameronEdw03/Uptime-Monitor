@@ -27,7 +27,7 @@ class Incident(SQLModel, table=True):
     monitor_id: int = Field(foreign_key="monitor.id")
     started_at: datetime = Field(default_factory=datetime.utcnow)
     resolved_at: Optional[datetime] = None
-    status: str = Field(default="open")
+    status: str = Field(default="active")
     reason: Optional[str] = None
 
 class UserCreate(SQLModel):

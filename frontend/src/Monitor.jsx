@@ -488,8 +488,10 @@ function Sidebar({ open, onClose }) {
           <SidebarItem
             icon={<AlertCircle className="h-4 w-4" />}
             label="Incidents"
+            onClick={() => {
+              window.location.href = "/incidents"
+            }}
           />
-
           <SidebarItem
             icon={<Globe2 className="h-4 w-4" />}
             label="Endpoints"
@@ -529,9 +531,10 @@ function Sidebar({ open, onClose }) {
   )
 }
 
-function SidebarItem({ icon, label, active }) {
+function SidebarItem({ icon, label, active, onClick }) {
   return (
     <button
+      onClick={onClick}
       className={`mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
         active
           ? "bg-white/[0.07] text-white"
