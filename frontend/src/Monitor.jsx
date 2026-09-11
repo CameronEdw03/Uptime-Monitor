@@ -26,6 +26,8 @@ const API_URL = "http://127.0.0.1:8000"
 export default function Monitor() {
   const [monitors, setMonitors] = useState([])
   const [checkResults, setCheckResults] = useState([])
+  const [monitorStats, setMonitorStats] = useState({})
+
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -50,7 +52,13 @@ export default function Monitor() {
         Authorization: `Bearer ${token}`,
       }
 
-      const [monitorsResponse, resultsResponse] = await Promise.all([
+      /*
+        First get the monitors and check results.
+      */
+      const [
+        monitorsResponse,
+        resultsResponse,
+      ] = await Promise.all([
         fetch(`${API_URL}/monitors`, { headers }),
         fetch(`${API_URL}/check_results`, { headers }),
       ])
@@ -63,15 +71,90 @@ export default function Monitor() {
         throw new Error("Authentication expired")
       }
 
-      if (!monitorsResponse.ok || !resultsResponse.ok) {
-        throw new Error("Unable to load monitoring data")
+      if (
+        !monitorsResponse.ok ||
+        !resultsResponse.ok
+      ) {
+        throw new Error(
+          "Unable to load monitoring data"
+        )
       }
 
-      const monitorData = await monitorsResponse.json()
-      const resultData = await resultsResponse.json()
+      const monitorData =
+        await monitorsResponse.json()
+
+      const resultData =
+        await resultsResponse.json()
 
       setMonitors(monitorData)
       setCheckResults(resultData)
+
+      /*
+        Get statistics for every monitor.
+
+        Backend endpoint:
+        GET /monitors/{monitor_id}/stats
+      */
+      const statsResults = await Promise.all(
+        monitorData.map(async (monitor) => {
+          try {
+            const response = await fetch(
+              `${API_URL}/monitors/${monitor.id}/stats`,
+              {
+                headers,
+              }
+            )
+
+            if (response.status === 401) {
+              localStorage.removeItem(
+                "access_token"
+              )
+
+              throw new Error(
+                "Authentication expired"
+              )
+            }
+
+            if (!response.ok) {
+              throw new Error(
+                `Unable to load stats for monitor ${monitor.id}`
+              )
+            }
+
+            const stats =
+              await response.json()
+
+            return [
+              monitor.id,
+              stats,
+            ]
+          } catch (error) {
+            console.error(
+              `Stats error for monitor ${monitor.id}:`,
+              error
+            )
+
+            return [
+              monitor.id,
+              null,
+            ]
+          }
+        })
+      )
+
+      /*
+        Convert the stats array into an object:
+
+        {
+          1: {...stats for monitor 1},
+          2: {...stats for monitor 2}
+        }
+      */
+      const statsMap = Object.fromEntries(
+        statsResults
+      )
+
+      setMonitorStats(statsMap)
     } catch (error) {
       console.error(error)
     } finally {
@@ -83,39 +166,69 @@ export default function Monitor() {
   useEffect(() => {
     loadData()
 
-    const interval = setInterval(loadData, 10000)
+    const interval = setInterval(
+      loadData,
+      10000
+    )
 
     return () => clearInterval(interval)
   }, [])
 
+  /*
+    Combine monitor information with its
+    check results and backend statistics.
+  */
   const monitorData = useMemo(() => {
     return monitors.map((monitor) => {
       const results = checkResults
-        .filter((result) => result.monitor_id === monitor.id)
+        .filter(
+          (result) =>
+            result.monitor_id === monitor.id
+        )
         .sort(
           (a, b) =>
-            new Date(b.checked_at) - new Date(a.checked_at)
+            new Date(b.checked_at) -
+            new Date(a.checked_at)
         )
 
       return {
         ...monitor,
         results,
         latest: results[0] || null,
+        stats:
+          monitorStats[monitor.id] || null,
       }
     })
-  }, [monitors, checkResults])
+  }, [
+    monitors,
+    checkResults,
+    monitorStats,
+  ])
 
+  /*
+    Current fleet health.
+  */
   const healthy = monitorData.filter(
-    (monitor) => monitor.latest?.is_up
+    (monitor) =>
+      monitor.latest?.is_up
   ).length
 
   const down = monitorData.filter(
     (monitor) =>
-      monitor.latest && !monitor.latest.is_up
+      monitor.latest &&
+      !monitor.latest.is_up
   ).length
 
-  const pending = monitors.length - healthy - down
+  const pending =
+    monitors.length - healthy - down
 
+  /*
+    Average response time.
+
+    For now this still uses the loaded
+    check results because your backend
+    currently only returns total_checks.
+  */
   const averageResponse = useMemo(() => {
     const values = checkResults
       .filter(
@@ -123,51 +236,102 @@ export default function Monitor() {
           result.response_time !== null &&
           result.response_time !== undefined
       )
-      .map((result) => result.response_time)
+      .map(
+        (result) =>
+          result.response_time
+      )
 
     if (!values.length) return 0
 
     return (
-      values.reduce((total, value) => total + value, 0) /
-      values.length
+      values.reduce(
+        (total, value) =>
+          total + value,
+        0
+      ) / values.length
     )
   }, [checkResults])
 
+  /*
+    Current fleet availability.
+  */
   const uptimePercentage =
     monitors.length > 0
-      ? Math.round((healthy / monitors.length) * 100)
+      ? Math.round(
+          (healthy / monitors.length) *
+            100
+        )
       : 0
 
+  /*
+    Total checks across every monitor.
+
+    Uses the backend stats endpoint.
+  */
+  const totalChecks = useMemo(() => {
+    return Object.values(
+      monitorStats
+    ).reduce(
+      (total, stats) =>
+        total +
+        (stats?.total_checks || 0),
+      0
+    )
+  }, [monitorStats])
+
+  /*
+    Delete monitor.
+  */
   const deleteMonitor = async (id) => {
-    if (!window.confirm("Delete this monitor?")) return
+    if (
+      !window.confirm(
+        "Delete this monitor?"
+      )
+    ) {
+      return
+    }
 
     try {
-      const token = localStorage.getItem("access_token")
+      const token =
+        localStorage.getItem(
+          "access_token"
+        )
 
       if (!token) {
-        throw new Error("No authentication token found")
+        throw new Error(
+          "No authentication token found"
+        )
       }
 
-      const response = await fetch(
-        `${API_URL}/monitors/${id}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      )
+      const response =
+        await fetch(
+          `${API_URL}/monitors/${id}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        )
 
       if (response.status === 401) {
-        localStorage.removeItem("access_token")
-        throw new Error("Authentication expired")
+        localStorage.removeItem(
+          "access_token"
+        )
+
+        throw new Error(
+          "Authentication expired"
+        )
       }
 
       if (!response.ok) {
-        throw new Error("Failed to delete monitor")
+        throw new Error(
+          "Failed to delete monitor"
+        )
       }
 
       setSelectedMonitor(null)
+
       await loadData()
     } catch (error) {
       console.error(error)
@@ -186,7 +350,9 @@ export default function Monitor() {
         <Brand />
 
         <button
-          onClick={() => setSidebarOpen(true)}
+          onClick={() =>
+            setSidebarOpen(true)
+          }
           className="rounded-lg p-2 text-gray-400 hover:bg-white/[0.05]"
         >
           <Menu className="h-5 w-5" />
@@ -195,7 +361,9 @@ export default function Monitor() {
 
       <Sidebar
         open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
+        onClose={() =>
+          setSidebarOpen(false)
+        }
       />
 
       {/* Main */}
@@ -204,14 +372,19 @@ export default function Monitor() {
         <header className="hidden h-16 items-center justify-between border-b border-white/[0.07] px-8 lg:flex">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span>Infrastructure</span>
+
             <ChevronRight className="h-3.5 w-3.5" />
-            <span className="text-gray-200">Monitors</span>
+
+            <span className="text-gray-200">
+              Monitors
+            </span>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.02] px-3 py-1.5">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
               </span>
 
@@ -227,16 +400,21 @@ export default function Monitor() {
             >
               <RefreshCw
                 className={`h-4 w-4 ${
-                  refreshing ? "animate-spin" : ""
+                  refreshing
+                    ? "animate-spin"
+                    : ""
                 }`}
               />
             </button>
 
             <button
-              onClick={() => setShowCreate(true)}
+              onClick={() =>
+                setShowCreate(true)
+              }
               className="flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-black transition hover:bg-gray-200"
             >
               <Plus className="h-4 w-4" />
+
               New monitor
             </button>
           </div>
@@ -249,6 +427,7 @@ export default function Monitor() {
               <div>
                 <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-gray-600">
                   <Activity className="h-3.5 w-3.5" />
+
                   System health
                 </div>
 
@@ -260,8 +439,9 @@ export default function Monitor() {
                 </h1>
 
                 <p className="mt-3 max-w-xl text-sm leading-6 text-gray-500">
-                  Real-time availability and performance
-                  monitoring for your services and endpoints.
+                  Real-time availability and
+                  performance monitoring for your
+                  services and endpoints.
                 </p>
               </div>
 
@@ -280,14 +460,18 @@ export default function Monitor() {
           {/* Metrics */}
           <section className="mb-10 grid overflow-hidden rounded-xl border border-white/[0.07] bg-[#0d0f10] sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
-              icon={<Server className="h-4 w-4" />}
+              icon={
+                <Server className="h-4 w-4" />
+              }
               label="Monitors"
               value={monitors.length}
               detail={`${pending} pending`}
             />
 
             <MetricCard
-              icon={<Zap className="h-4 w-4" />}
+              icon={
+                <Zap className="h-4 w-4" />
+              }
               label="Operational"
               value={healthy}
               detail={
@@ -299,18 +483,26 @@ export default function Monitor() {
             />
 
             <MetricCard
-              icon={<Gauge className="h-4 w-4" />}
+              icon={
+                <Gauge className="h-4 w-4" />
+              }
               label="Avg. response"
-              value={`${averageResponse.toFixed(0)}ms`}
-              detail="Across recent checks"
+              value={`${averageResponse.toFixed(
+                0
+              )}ms`}
+              detail={`${totalChecks.toLocaleString()} total checks`}
             />
 
             <MetricCard
-              icon={<Activity className="h-4 w-4" />}
+              icon={
+                <Activity className="h-4 w-4" />
+              }
               label="Availability"
               value={`${uptimePercentage}%`}
               detail="Current fleet health"
-              positive={uptimePercentage >= 99}
+              positive={
+                uptimePercentage >= 99
+              }
             />
           </section>
 
@@ -323,15 +515,26 @@ export default function Monitor() {
                 </h2>
 
                 <p className="mt-1 text-xs text-gray-600">
-                  Endpoint health checks run automatically every
-                  10 seconds.
+                  Endpoint health checks run
+                  automatically every 10 seconds.
                 </p>
               </div>
 
               <div className="flex items-center gap-4 text-xs text-gray-600">
-                <StatusDot color="bg-emerald-400" label="Operational" />
-                <StatusDot color="bg-red-400" label="Down" />
-                <StatusDot color="bg-gray-600" label="Pending" />
+                <StatusDot
+                  color="bg-emerald-400"
+                  label="Operational"
+                />
+
+                <StatusDot
+                  color="bg-red-400"
+                  label="Down"
+                />
+
+                <StatusDot
+                  color="bg-gray-600"
+                  label="Pending"
+                />
               </div>
             </div>
 
@@ -348,23 +551,33 @@ export default function Monitor() {
                 <LoadingRows />
               ) : monitorData.length === 0 ? (
                 <EmptyState
-                  onCreate={() => setShowCreate(true)}
+                  onCreate={() =>
+                    setShowCreate(true)
+                  }
                 />
               ) : (
                 <div className="divide-y divide-white/[0.05]">
-                  {monitorData.map((monitor) => (
-                    <MonitorRow
-                      key={monitor.id}
-                      monitor={monitor}
-                      onSelect={() =>
-                        setSelectedMonitor(monitor)
-                      }
-                      onEdit={() => openEdit(monitor)}
-                      onDelete={() =>
-                        deleteMonitor(monitor.id)
-                      }
-                    />
-                  ))}
+                  {monitorData.map(
+                    (monitor) => (
+                      <MonitorRow
+                        key={monitor.id}
+                        monitor={monitor}
+                        onSelect={() =>
+                          setSelectedMonitor(
+                            monitor
+                          )
+                        }
+                        onEdit={() =>
+                          openEdit(monitor)
+                        }
+                        onDelete={() =>
+                          deleteMonitor(
+                            monitor.id
+                          )
+                        }
+                      />
+                    )
+                  )}
                 </div>
               )}
             </div>
@@ -376,10 +589,14 @@ export default function Monitor() {
               healthy={healthy}
               down={down}
               pending={pending}
-              uptimePercentage={uptimePercentage}
+              uptimePercentage={
+                uptimePercentage
+              }
             />
 
-            <EnginePanel />
+            <EnginePanel
+              totalChecks={totalChecks}
+            />
           </section>
         </div>
       </main>
@@ -388,7 +605,9 @@ export default function Monitor() {
       {showCreate && (
         <MonitorForm
           title="Create monitor"
-          onClose={() => setShowCreate(false)}
+          onClose={() =>
+            setShowCreate(false)
+          }
           onSuccess={() => {
             setShowCreate(false)
             loadData()
@@ -396,38 +615,47 @@ export default function Monitor() {
         />
       )}
 
-      {showEdit && editingMonitor && (
-        <MonitorForm
-          title="Edit monitor"
-          monitor={editingMonitor}
-          onClose={() => {
-            setShowEdit(false)
-            setEditingMonitor(null)
-          }}
-          onSuccess={() => {
-            setShowEdit(false)
-            setEditingMonitor(null)
-            loadData()
-          }}
-        />
-      )}
+      {showEdit &&
+        editingMonitor && (
+          <MonitorForm
+            title="Edit monitor"
+            monitor={editingMonitor}
+            onClose={() => {
+              setShowEdit(false)
+              setEditingMonitor(null)
+            }}
+            onSuccess={() => {
+              setShowEdit(false)
+              setEditingMonitor(null)
+              loadData()
+            }}
+          />
+        )}
 
       {selectedMonitor && (
         <MonitorDetails
           monitor={selectedMonitor}
-          onClose={() => setSelectedMonitor(null)}
+          onClose={() =>
+            setSelectedMonitor(null)
+          }
           onEdit={() => {
             setSelectedMonitor(null)
             openEdit(selectedMonitor)
           }}
-          onDelete={() => deleteMonitor(selectedMonitor.id)}
+          onDelete={() =>
+            deleteMonitor(
+              selectedMonitor.id
+            )
+          }
         />
       )}
     </div>
   )
 }
 
-
+/* -------------------------------------------------------
+   Brand
+------------------------------------------------------- */
 
 function Brand() {
   return (
@@ -440,6 +668,7 @@ function Brand() {
         <p className="text-sm font-semibold tracking-tight">
           Uptime
         </p>
+
         <p className="text-[10px] uppercase tracking-[0.16em] text-gray-600">
           Monitor
         </p>
@@ -447,6 +676,10 @@ function Brand() {
     </div>
   )
 }
+
+/* -------------------------------------------------------
+   Sidebar
+------------------------------------------------------- */
 
 function Sidebar({ open, onClose }) {
   return (
@@ -460,7 +693,9 @@ function Sidebar({ open, onClose }) {
 
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-[240px] flex-col border-r border-white/[0.07] bg-[#090a0b] transition-transform duration-200 lg:translate-x-0 ${
-          open ? "translate-x-0" : "-translate-x-full"
+          open
+            ? "translate-x-0"
+            : "-translate-x-full"
         }`}
       >
         <div className="flex h-16 items-center border-b border-white/[0.07] px-5">
@@ -480,20 +715,28 @@ function Sidebar({ open, onClose }) {
           </p>
 
           <SidebarItem
-            icon={<Activity className="h-4 w-4" />}
+            icon={
+              <Activity className="h-4 w-4" />
+            }
             label="Monitors"
             active
           />
 
           <SidebarItem
-            icon={<AlertCircle className="h-4 w-4" />}
+            icon={
+              <AlertCircle className="h-4 w-4" />
+            }
             label="Incidents"
             onClick={() => {
-              window.location.href = "/incidents"
+              window.location.href =
+                "/incidents"
             }}
           />
+
           <SidebarItem
-            icon={<Globe2 className="h-4 w-4" />}
+            icon={
+              <Globe2 className="h-4 w-4" />
+            }
             label="Endpoints"
           />
 
@@ -504,8 +747,13 @@ function Sidebar({ open, onClose }) {
           </p>
 
           <SidebarItem
-            icon={<Settings className="h-4 w-4" />}
+            icon={
+              <Settings className="h-4 w-4" />
+            }
             label="Settings"
+            onClick={() => {
+              window.location.href = "/settings"
+            }}
           />
         </div>
 
@@ -531,7 +779,12 @@ function Sidebar({ open, onClose }) {
   )
 }
 
-function SidebarItem({ icon, label, active, onClick }) {
+function SidebarItem({
+  icon,
+  label,
+  active,
+  onClick,
+}) {
   return (
     <button
       onClick={onClick}
@@ -542,11 +795,15 @@ function SidebarItem({ icon, label, active, onClick }) {
       }`}
     >
       {icon}
+
       <span>{label}</span>
     </button>
   )
 }
 
+/* -------------------------------------------------------
+   Metric Card
+------------------------------------------------------- */
 
 function MetricCard({
   icon,
@@ -559,6 +816,7 @@ function MetricCard({
     <div className="border-b border-white/[0.06] px-5 py-5 sm:px-6 sm:even:border-l xl:border-b-0 xl:border-r xl:last:border-r-0">
       <div className="flex items-center gap-2 text-gray-600">
         {icon}
+
         <span className="text-[10px] font-medium uppercase tracking-[0.14em]">
           {label}
         </span>
@@ -567,7 +825,9 @@ function MetricCard({
       <div className="mt-4 flex items-end justify-between gap-4">
         <span
           className={`text-2xl font-semibold tracking-[-0.03em] ${
-            positive ? "text-emerald-400" : "text-white"
+            positive
+              ? "text-emerald-400"
+              : "text-white"
           }`}
         >
           {value}
@@ -585,16 +845,28 @@ function MetricCard({
   )
 }
 
-function StatusDot({ color, label }) {
+/* -------------------------------------------------------
+   Status
+------------------------------------------------------- */
+
+function StatusDot({
+  color,
+  label,
+}) {
   return (
     <div className="flex items-center gap-2">
-      <span className={`h-1.5 w-1.5 rounded-full ${color}`} />
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${color}`}
+      />
+
       {label}
     </div>
   )
 }
 
-
+/* -------------------------------------------------------
+   Monitor Row
+------------------------------------------------------- */
 
 function MonitorRow({
   monitor,
@@ -602,10 +874,29 @@ function MonitorRow({
   onEdit,
   onDelete,
 }) {
-  const isUp = monitor.latest?.is_up
-  const hasResult = monitor.latest !== null
+  const isUp =
+    monitor.latest?.is_up
 
-  const uptime = calculateUptime(monitor.results)
+  const hasResult =
+    monitor.latest !== null
+
+  /*
+    Prefer backend uptime if it exists.
+    Otherwise calculate from available results.
+  */
+  const uptime =
+    monitor.stats?.uptime_percentage ??
+    calculateUptime(
+      monitor.results
+    )
+
+  /*
+    Prefer backend average response time
+    if available.
+  */
+  const responseTime =
+    monitor.stats?.average_response_time ??
+    monitor.latest?.response_time
 
   return (
     <div
@@ -642,7 +933,9 @@ function MonitorRow({
 
           {/* Mobile uptime visualization */}
           <div className="mt-4 md:hidden">
-            <UptimeBars results={monitor.results} />
+            <UptimeBars
+              results={monitor.results}
+            />
           </div>
         </div>
 
@@ -657,19 +950,24 @@ function MonitorRow({
         {/* Response */}
         <div>
           <p className="text-sm text-gray-300">
-            {monitor.latest?.response_time
-              ? `${monitor.latest.response_time.toFixed(0)} ms`
+            {responseTime !== null &&
+            responseTime !== undefined
+              ? `${responseTime.toFixed(
+                  0
+                )} ms`
               : "--"}
           </p>
 
           <p className="mt-1 text-[10px] text-gray-700">
-            Latest check
+            Average response
           </p>
         </div>
 
         {/* Uptime */}
         <div className="hidden md:block">
-          <UptimeBars results={monitor.results} />
+          <UptimeBars
+            results={monitor.results}
+          />
 
           <p className="mt-2 text-[10px] text-gray-700">
             {uptime}% availability
@@ -679,7 +977,9 @@ function MonitorRow({
         {/* Actions */}
         <div
           className="flex justify-end gap-1 opacity-100 md:opacity-0 md:transition group-hover:opacity-100"
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) =>
+            event.stopPropagation()
+          }
         >
           <button
             onClick={onEdit}
@@ -713,11 +1013,14 @@ function MonitorRow({
 
         <div className="rounded-lg bg-white/[0.025] p-3">
           <p className="text-[10px] uppercase tracking-wide text-gray-700">
-            Expected
+            Total checks
           </p>
 
           <p className="mt-1 text-xs text-gray-400">
-            HTTP {monitor.expected_status}
+            {(
+              monitor.stats
+                ?.total_checks || 0
+            ).toLocaleString()}
           </p>
         </div>
       </div>
@@ -725,7 +1028,14 @@ function MonitorRow({
   )
 }
 
-function StatusIndicator({ isUp, hasResult }) {
+/* -------------------------------------------------------
+   Status Indicator
+------------------------------------------------------- */
+
+function StatusIndicator({
+  isUp,
+  hasResult,
+}) {
   return (
     <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
       <div
@@ -751,7 +1061,14 @@ function StatusIndicator({ isUp, hasResult }) {
   )
 }
 
-function StatusBadge({ isUp, hasResult }) {
+/* -------------------------------------------------------
+   Status Badge
+------------------------------------------------------- */
+
+function StatusBadge({
+  isUp,
+  hasResult,
+}) {
   if (!hasResult) {
     return (
       <span className="text-xs font-medium text-gray-600">
@@ -764,6 +1081,7 @@ function StatusBadge({ isUp, hasResult }) {
     return (
       <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
         <Check className="h-3.5 w-3.5" />
+
         Operational
       </div>
     )
@@ -772,6 +1090,7 @@ function StatusBadge({ isUp, hasResult }) {
   return (
     <div className="flex items-center gap-2 text-xs font-medium text-red-400">
       <AlertCircle className="h-3.5 w-3.5" />
+
       Down
     </div>
   )
@@ -781,13 +1100,19 @@ function StatusBadge({ isUp, hasResult }) {
    Uptime Visualization
 ------------------------------------------------------- */
 
-function UptimeBars({ results = [] }) {
-  const bars = results.slice(0, 30).reverse()
+function UptimeBars({
+  results = [],
+}) {
+  const bars = results
+    .slice(0, 30)
+    .reverse()
 
   if (!bars.length) {
     return (
       <div className="flex h-5 items-center gap-[2px]">
-        {Array.from({ length: 30 }).map((_, index) => (
+        {Array.from({
+          length: 30,
+        }).map((_, index) => (
           <span
             key={index}
             className="h-4 flex-1 rounded-[2px] bg-white/[0.05]"
@@ -799,42 +1124,63 @@ function UptimeBars({ results = [] }) {
 
   return (
     <div className="flex h-5 items-center gap-[2px]">
-      {bars.map((result, index) => (
-        <span
-          key={result.id || index}
-          title={
-            result.checked_at
-              ? new Date(result.checked_at).toLocaleString()
-              : ""
-          }
-          className={`h-4 flex-1 rounded-[2px] transition ${
-            result.is_up
-              ? "bg-emerald-400/70 hover:bg-emerald-400"
-              : "bg-red-400/80 hover:bg-red-400"
-          }`}
-        />
-      ))}
+      {bars.map(
+        (result, index) => (
+          <span
+            key={
+              result.id ||
+              index
+            }
+            title={
+              result.checked_at
+                ? new Date(
+                    result.checked_at
+                  ).toLocaleString()
+                : ""
+            }
+            className={`h-4 flex-1 rounded-[2px] transition ${
+              result.is_up
+                ? "bg-emerald-400/70 hover:bg-emerald-400"
+                : "bg-red-400/80 hover:bg-red-400"
+            }`}
+          />
+        )
+      )}
 
       {Array.from({
-        length: Math.max(0, 30 - bars.length),
-      }).map((_, index) => (
-        <span
-          key={`empty-${index}`}
-          className="h-4 flex-1 rounded-[2px] bg-white/[0.05]"
-        />
-      ))}
+        length: Math.max(
+          0,
+          30 - bars.length
+        ),
+      }).map(
+        (_, index) => (
+          <span
+            key={`empty-${index}`}
+            className="h-4 flex-1 rounded-[2px] bg-white/[0.05]"
+          />
+        )
+      )}
     </div>
   )
 }
 
-function calculateUptime(results) {
-  if (!results?.length) return 0
+function calculateUptime(
+  results
+) {
+  if (!results?.length)
+    return 0
 
-  const successful = results.filter(
-    (result) => result.is_up
-  ).length
+  const successful =
+    results.filter(
+      (result) =>
+        result.is_up
+    ).length
 
-  return Math.round((successful / results.length) * 100)
+  return Math.round(
+    (successful /
+      results.length) *
+      100
+  )
 }
 
 /* -------------------------------------------------------
@@ -856,7 +1202,8 @@ function AvailabilityPanel({
           </p>
 
           <p className="mt-1 text-xs text-gray-600">
-            Current health across all monitored services.
+            Current health across all
+            monitored services.
           </p>
         </div>
 
@@ -882,7 +1229,9 @@ function AvailabilityPanel({
           <HealthLine
             label="Operational"
             value={healthy}
-            percentage={uptimePercentage}
+            percentage={
+              uptimePercentage
+            }
             color="bg-emerald-400"
           />
 
@@ -890,10 +1239,15 @@ function AvailabilityPanel({
             label="Down"
             value={down}
             percentage={
-              healthy + down + pending > 0
+              healthy +
+                down +
+                pending >
+              0
                 ? Math.round(
                     (down /
-                      (healthy + down + pending)) *
+                      (healthy +
+                        down +
+                        pending)) *
                       100
                   )
                 : 0
@@ -905,10 +1259,15 @@ function AvailabilityPanel({
             label="Pending"
             value={pending}
             percentage={
-              healthy + down + pending > 0
+              healthy +
+                down +
+                pending >
+              0
                 ? Math.round(
                     (pending /
-                      (healthy + down + pending)) *
+                      (healthy +
+                        down +
+                        pending)) *
                       100
                   )
                 : 0
@@ -930,21 +1289,37 @@ function HealthLine({
   return (
     <div>
       <div className="mb-1.5 flex justify-between text-xs">
-        <span className="text-gray-500">{label}</span>
-        <span className="text-gray-400">{value}</span>
+        <span className="text-gray-500">
+          {label}
+        </span>
+
+        <span className="text-gray-400">
+          {value}
+        </span>
       </div>
 
       <div className="h-1 overflow-hidden rounded-full bg-white/[0.04]">
         <div
           className={`h-full rounded-full ${color}`}
-          style={{ width: `${Math.min(100, percentage)}%` }}
+          style={{
+            width: `${Math.min(
+              100,
+              percentage
+            )}%`,
+          }}
         />
       </div>
     </div>
   )
 }
 
-function EnginePanel() {
+/* -------------------------------------------------------
+   Monitoring Engine
+------------------------------------------------------- */
+
+function EnginePanel({
+  totalChecks,
+}) {
   return (
     <div className="rounded-xl border border-white/[0.07] bg-[#0d0f10] p-6">
       <div className="flex items-start justify-between">
@@ -984,11 +1359,11 @@ function EnginePanel() {
           <Clock3 className="h-3.5 w-3.5 text-gray-600" />
 
           <p className="mt-3 text-xs text-gray-500">
-            Check frequency
+            Total checks
           </p>
 
           <p className="mt-1 text-sm font-medium text-gray-300">
-            10 seconds
+            {totalChecks.toLocaleString()}
           </p>
         </div>
 
@@ -1015,20 +1390,25 @@ function EnginePanel() {
 function LoadingRows() {
   return (
     <div className="divide-y divide-white/[0.05]">
-      {[1, 2, 3, 4].map((item) => (
-        <div
-          key={item}
-          className="animate-pulse px-6 py-6"
-        >
-          <div className="h-4 w-1/3 rounded bg-white/[0.05]" />
-          <div className="mt-3 h-3 w-1/4 rounded bg-white/[0.03]" />
-        </div>
-      ))}
+      {[1, 2, 3, 4].map(
+        (item) => (
+          <div
+            key={item}
+            className="animate-pulse px-6 py-6"
+          >
+            <div className="h-4 w-1/3 rounded bg-white/[0.05]" />
+
+            <div className="mt-3 h-3 w-1/4 rounded bg-white/[0.03]" />
+          </div>
+        )
+      )}
     </div>
   )
 }
 
-function EmptyState({ onCreate }) {
+function EmptyState({
+  onCreate,
+}) {
   return (
     <div className="px-6 py-20 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.025]">
@@ -1040,8 +1420,9 @@ function EmptyState({ onCreate }) {
       </h3>
 
       <p className="mx-auto mt-2 max-w-sm text-xs leading-5 text-gray-600">
-        Add your first endpoint to start collecting
-        availability and response-time data.
+        Add your first endpoint to start
+        collecting availability and
+        response-time data.
       </p>
 
       <button
@@ -1049,6 +1430,7 @@ function EmptyState({ onCreate }) {
         className="mt-6 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black transition hover:bg-gray-200"
       >
         <Plus className="h-4 w-4" />
+
         Create monitor
       </button>
     </div>
@@ -1065,66 +1447,104 @@ function MonitorForm({
   onClose,
   onSuccess,
 }) {
-  const [name, setName] = useState(
-    monitor?.name || ""
+  const [name, setName] =
+    useState(
+      monitor?.name || ""
+    )
+
+  const [url, setUrl] =
+    useState(
+      monitor?.url || ""
+    )
+
+  const [
+    checkInterval,
+    setCheckInterval,
+  ] = useState(
+    monitor?.check_interval ||
+      30
   )
 
-  const [url, setUrl] = useState(
-    monitor?.url || ""
+  const [
+    expectedStatus,
+    setExpectedStatus,
+  ] = useState(
+    monitor?.expected_status ||
+      200
   )
 
-  const [checkInterval, setCheckInterval] = useState(
-    monitor?.check_interval || 30
-  )
+  const [saving, setSaving] =
+    useState(false)
 
-  const [expectedStatus, setExpectedStatus] = useState(
-    monitor?.expected_status || 200
-  )
+  const [error, setError] =
+    useState("")
 
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState("")
-
-  const submit = async (event) => {
+  const submit = async (
+    event
+  ) => {
     event.preventDefault()
 
     setSaving(true)
     setError("")
 
     try {
-      const token = localStorage.getItem("access_token")
+      const token =
+        localStorage.getItem(
+          "access_token"
+        )
 
       if (!token) {
-        throw new Error("No authentication token found")
+        throw new Error(
+          "No authentication token found"
+        )
       }
 
       const payload = {
         name,
         url,
-        check_interval: Number(checkInterval),
-        expected_status: Number(expectedStatus),
+        check_interval:
+          Number(checkInterval),
+        expected_status:
+          Number(expectedStatus),
       }
 
-      const response = await fetch(
-        monitor
-          ? `${API_URL}/monitors/${monitor.id}`
-          : `${API_URL}/monitors`,
-        {
-          method: monitor ? "PATCH" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        }
-      )
+      const response =
+        await fetch(
+          monitor
+            ? `${API_URL}/monitors/${monitor.id}`
+            : `${API_URL}/monitors`,
+          {
+            method: monitor
+              ? "PATCH"
+              : "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(
+              payload
+            ),
+          }
+        )
 
-      if (response.status === 401) {
-        localStorage.removeItem("access_token")
-        throw new Error("Authentication expired")
+      if (
+        response.status ===
+        401
+      ) {
+        localStorage.removeItem(
+          "access_token"
+        )
+
+        throw new Error(
+          "Authentication expired"
+        )
       }
 
       if (!response.ok) {
-        throw new Error("Unable to save monitor")
+        throw new Error(
+          "Unable to save monitor"
+        )
       }
 
       onSuccess()
@@ -1132,7 +1552,8 @@ function MonitorForm({
       console.error(error)
 
       setError(
-        error.message === "Authentication expired"
+        error.message ===
+          "Authentication expired"
           ? "Your session has expired. Please sign in again."
           : "Unable to save monitor. Check the values and try again."
       )
@@ -1156,7 +1577,8 @@ function MonitorForm({
               </h2>
 
               <p className="mt-1 text-xs text-gray-600">
-                Configure how this endpoint should be monitored.
+                Configure how this endpoint
+                should be monitored.
               </p>
             </div>
 
@@ -1192,15 +1614,21 @@ function MonitorForm({
             <FormField
               label="Check interval"
               value={checkInterval}
-              onChange={setCheckInterval}
+              onChange={
+                setCheckInterval
+              }
               type="number"
               suffix="sec"
             />
 
             <FormField
               label="Expected status"
-              value={expectedStatus}
-              onChange={setExpectedStatus}
+              value={
+                expectedStatus
+              }
+              onChange={
+                setExpectedStatus
+              }
               type="number"
               suffix="HTTP"
             />
@@ -1209,6 +1637,7 @@ function MonitorForm({
           {error && (
             <div className="flex items-start gap-3 rounded-lg border border-red-400/10 bg-red-400/[0.04] p-3.5 text-xs text-red-400">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+
               {error}
             </div>
           )}
@@ -1263,12 +1692,18 @@ function FormField({
           type={type}
           value={value}
           onChange={(event) =>
-            onChange(event.target.value)
+            onChange(
+              event.target.value
+            )
           }
-          placeholder={placeholder}
+          placeholder={
+            placeholder
+          }
           required
           className={`w-full rounded-lg border border-white/[0.08] bg-[#08090a] px-3.5 py-3 text-sm text-gray-200 outline-none transition placeholder:text-gray-700 focus:border-white/[0.2] focus:bg-white/[0.02] ${
-            suffix ? "pr-14" : ""
+            suffix
+              ? "pr-14"
+              : ""
           }`}
         />
 
@@ -1292,29 +1727,59 @@ function MonitorDetails({
   onEdit,
   onDelete,
 }) {
-  const results = monitor.results || []
+  const results =
+    monitor.results || []
+
+  /*
+    Backend stats are preferred.
+  */
+  const totalChecks =
+    monitor.stats
+      ?.total_checks ??
+    results.length
 
   const average =
-    results.length > 0
+    monitor.stats
+      ?.average_response_time ??
+    (results.length > 0
       ? results.reduce(
           (sum, result) =>
-            sum + (result.response_time || 0),
+            sum +
+            (result.response_time ||
+              0),
           0
         ) / results.length
-      : 0
+      : 0)
 
-  const successfulChecks = results.filter(
-    (result) => result.is_up
-  ).length
+  const successfulChecks =
+    monitor.stats
+      ?.successful_checks ??
+    results.filter(
+      (result) =>
+        result.is_up
+    ).length
+
+  const failedChecks =
+    monitor.stats
+      ?.failed_checks ??
+    results.filter(
+      (result) =>
+        !result.is_up
+    ).length
 
   const availability =
-    results.length > 0
+    monitor.stats
+      ?.uptime_percentage ??
+    (results.length > 0
       ? Math.round(
-          (successfulChecks / results.length) * 100
+          (successfulChecks /
+            results.length) *
+            100
         )
-      : 0
+      : 0)
 
-  const latest = monitor.latest
+  const latest =
+    monitor.latest
 
   return (
     <Modal>
@@ -1356,21 +1821,30 @@ function MonitorDetails({
 
         <div className="max-h-[calc(90vh-85px)] overflow-y-auto p-6">
           {/* Overview */}
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <DetailMetric
               title="Availability"
               value={`${availability}%`}
-              positive={availability >= 99}
+              positive={
+                availability >= 99
+              }
             />
 
             <DetailMetric
               title="Avg. response"
-              value={`${average.toFixed(0)} ms`}
+              value={`${average.toFixed(
+                0
+              )} ms`}
             />
 
             <DetailMetric
-              title="Check interval"
-              value={`${monitor.check_interval}s`}
+              title="Total checks"
+              value={totalChecks.toLocaleString()}
+            />
+
+            <DetailMetric
+              title="Failed checks"
+              value={failedChecks.toLocaleString()}
             />
           </div>
 
@@ -1388,34 +1862,48 @@ function MonitorDetails({
               </div>
 
               <StatusBadge
-                isUp={latest?.is_up}
+                isUp={
+                  latest?.is_up
+                }
                 hasResult={!!latest}
               />
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-5">
               <SmallStat
                 label="HTTP status"
-                value={latest?.status_code || "--"}
+                value={
+                  latest?.status_code ||
+                  "--"
+                }
               />
 
               <SmallStat
                 label="Response"
                 value={
                   latest?.response_time
-                    ? `${latest.response_time.toFixed(0)} ms`
+                    ? `${latest.response_time.toFixed(
+                        0
+                      )} ms`
                     : "--"
                 }
               />
 
               <SmallStat
                 label="Expected"
-                value={monitor.expected_status}
+                value={
+                  monitor.expected_status
+                }
               />
 
               <SmallStat
                 label="Interval"
                 value={`${monitor.check_interval}s`}
+              />
+
+              <SmallStat
+                label="Successful"
+                value={successfulChecks.toLocaleString()}
               />
             </div>
           </div>
@@ -1430,72 +1918,88 @@ function MonitorDetails({
                   </h3>
 
                   <p className="mt-1 text-xs text-gray-600">
-                    Recent endpoint health checks.
+                    Recent endpoint health
+                    checks.
                   </p>
                 </div>
 
                 <span className="text-xs text-gray-600">
-                  {results.length} checks
+                  {totalChecks.toLocaleString()}{" "}
+                  checks
                 </span>
               </div>
             </div>
 
-            {results.length === 0 ? (
+            {results.length ===
+            0 ? (
               <div className="p-12 text-center text-xs text-gray-600">
-                No check results available yet.
+                No check results
+                available yet.
               </div>
             ) : (
               <div className="divide-y divide-white/[0.05]">
-                {results.slice(0, 25).map((result) => (
-                  <div
-                    key={result.id}
-                    className="flex items-center justify-between gap-4 px-5 py-3.5"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${
-                          result.is_up
-                            ? "bg-emerald-400"
-                            : "bg-red-400"
-                        }`}
-                      />
+                {results
+                  .slice(0, 25)
+                  .map(
+                    (
+                      result
+                    ) => (
+                      <div
+                        key={
+                          result.id
+                        }
+                        className="flex items-center justify-between gap-4 px-5 py-3.5"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${
+                              result.is_up
+                                ? "bg-emerald-400"
+                                : "bg-red-400"
+                            }`}
+                          />
 
-                      <div className="min-w-0">
-                        <p
-                          className={`text-xs font-medium ${
-                            result.is_up
-                              ? "text-emerald-400"
-                              : "text-red-400"
-                          }`}
-                        >
-                          {result.is_up
-                            ? "Operational"
-                            : "Failed"}
-                        </p>
+                          <div className="min-w-0">
+                            <p
+                              className={`text-xs font-medium ${
+                                result.is_up
+                                  ? "text-emerald-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {result.is_up
+                                ? "Operational"
+                                : "Failed"}
+                            </p>
 
-                        <p className="mt-0.5 truncate text-[10px] text-gray-700">
-                          {result.checked_at
-                            ? new Date(
-                                result.checked_at
-                              ).toLocaleString()
-                            : "Unknown time"}
-                        </p>
+                            <p className="mt-0.5 truncate text-[10px] text-gray-700">
+                              {result.checked_at
+                                ? new Date(
+                                    result.checked_at
+                                  ).toLocaleString()
+                                : "Unknown time"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-6 text-xs">
+                          <span className="text-gray-500">
+                            HTTP{" "}
+                            {result.status_code ||
+                              "--"}
+                          </span>
+
+                          <span className="w-16 text-right text-gray-600">
+                            {result.response_time
+                              ? `${result.response_time.toFixed(
+                                  0
+                                )} ms`
+                              : "--"}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="flex shrink-0 items-center gap-6 text-xs">
-                      <span className="text-gray-500">
-                        HTTP {result.status_code || "--"}
-                      </span>
-
-                      <span className="w-16 text-right text-gray-600">
-                        {result.response_time
-                          ? `${result.response_time.toFixed(0)} ms`
-                          : "--"}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                    )
+                  )}
               </div>
             )}
           </div>
@@ -1507,6 +2011,7 @@ function MonitorDetails({
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-red-400 transition hover:bg-red-400/[0.06]"
             >
               <Trash2 className="h-3.5 w-3.5" />
+
               Delete monitor
             </button>
 
@@ -1515,6 +2020,7 @@ function MonitorDetails({
               className="flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-xs font-medium text-black transition hover:bg-gray-200"
             >
               <Pencil className="h-3.5 w-3.5" />
+
               Edit monitor
             </button>
           </div>
@@ -1523,6 +2029,10 @@ function MonitorDetails({
     </Modal>
   )
 }
+
+/* -------------------------------------------------------
+   Detail Metric
+------------------------------------------------------- */
 
 function DetailMetric({
   title,
@@ -1548,7 +2058,14 @@ function DetailMetric({
   )
 }
 
-function SmallStat({ label, value }) {
+/* -------------------------------------------------------
+   Small Stat
+------------------------------------------------------- */
+
+function SmallStat({
+  label,
+  value,
+}) {
   return (
     <div>
       <p className="text-[10px] uppercase tracking-wide text-gray-700">
@@ -1566,11 +2083,12 @@ function SmallStat({ label, value }) {
    Modal
 ------------------------------------------------------- */
 
-function Modal({ children }) {
+function Modal({
+  children,
+}) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
       {children}
     </div>
   )
 }
-

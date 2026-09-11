@@ -36,8 +36,12 @@ export default function Incidents() {
 
       const [incidentsResponse, monitorsResponse] =
         await Promise.all([
-          fetch(`${API_URL}/incidents`, { headers }),
-          fetch(`${API_URL}/monitors`, { headers }),
+          fetch(`${API_URL}/incidents`, {
+            headers,
+          }),
+          fetch(`${API_URL}/monitors`, {
+            headers,
+          }),
         ])
 
       if (
@@ -45,14 +49,19 @@ export default function Incidents() {
         monitorsResponse.status === 401
       ) {
         localStorage.removeItem("access_token")
-        throw new Error("Authentication expired")
+
+        window.location.href = "/"
+
+        return
       }
 
       if (
         !incidentsResponse.ok ||
         !monitorsResponse.ok
       ) {
-        throw new Error("Unable to load incident data")
+        throw new Error(
+          "Unable to load incident data"
+        )
       }
 
       const incidentData =
@@ -74,7 +83,10 @@ export default function Incidents() {
   useEffect(() => {
     loadData()
 
-    const interval = setInterval(loadData, 10000)
+    const interval = setInterval(
+      loadData,
+      10000
+    )
 
     return () => clearInterval(interval)
   }, [])
@@ -88,8 +100,15 @@ export default function Incidents() {
     )
   }, [monitors])
 
-  const activeIncidents = incidents.filter(
-    (incident) => incident.status === "active"
+  /*
+   * Backend incident statuses:
+   *
+   * open
+   * resolved
+   */
+
+  const openIncidents = incidents.filter(
+    (incident) => incident.status === "open"
   )
 
   const resolvedIncidents = incidents.filter(
@@ -116,7 +135,7 @@ export default function Incidents() {
       />
 
       <main className="lg:pl-[240px]">
-        {/* Top bar */}
+        {/* Top Bar */}
         <header className="hidden h-16 items-center justify-between border-b border-white/[0.07] px-8 lg:flex">
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span>Infrastructure</span>
@@ -133,7 +152,7 @@ export default function Incidents() {
               <span className="relative flex h-2 w-2">
                 <span
                   className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${
-                    activeIncidents.length > 0
+                    openIncidents.length > 0
                       ? "bg-red-400"
                       : "bg-emerald-400"
                   }`}
@@ -141,7 +160,7 @@ export default function Incidents() {
 
                 <span
                   className={`relative inline-flex h-2 w-2 rounded-full ${
-                    activeIncidents.length > 0
+                    openIncidents.length > 0
                       ? "bg-red-400"
                       : "bg-emerald-400"
                   }`}
@@ -149,7 +168,7 @@ export default function Incidents() {
               </span>
 
               <span className="text-xs text-gray-400">
-                {activeIncidents.length > 0
+                {openIncidents.length > 0
                   ? "Incident detected"
                   : "Systems operational"}
               </span>
@@ -162,7 +181,9 @@ export default function Incidents() {
             >
               <RefreshCw
                 className={`h-4 w-4 ${
-                  refreshing ? "animate-spin" : ""
+                  refreshing
+                    ? "animate-spin"
+                    : ""
                 }`}
               />
             </button>
@@ -176,19 +197,22 @@ export default function Incidents() {
               <div>
                 <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-gray-600">
                   <AlertCircle className="h-3.5 w-3.5" />
-                  Incident management
+
+                  <span>
+                    Incident management
+                  </span>
                 </div>
 
                 <h1 className="text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl">
-                  {activeIncidents.length > 0
+                  {openIncidents.length > 0
                     ? "Attention required."
                     : "Everything is stable."}
                 </h1>
 
                 <p className="mt-3 max-w-xl text-sm leading-6 text-gray-500">
-                  Track active outages, resolved incidents,
-                  and service recovery across your monitored
-                  infrastructure.
+                  Track open outages, resolved incidents,
+                  and service recovery across your
+                  monitored infrastructure.
                 </p>
               </div>
             </div>
@@ -200,14 +224,14 @@ export default function Incidents() {
               icon={
                 <AlertCircle className="h-4 w-4" />
               }
-              label="Active incidents"
-              value={activeIncidents.length}
+              label="Open incidents"
+              value={openIncidents.length}
               detail={
-                activeIncidents.length > 0
+                openIncidents.length > 0
                   ? "Require attention"
-                  : "No active incidents"
+                  : "No open incidents"
               }
-              danger={activeIncidents.length > 0}
+              danger={openIncidents.length > 0}
             />
 
             <MetricCard
@@ -221,18 +245,20 @@ export default function Incidents() {
             />
 
             <MetricCard
-              icon={<Activity className="h-4 w-4" />}
+              icon={
+                <Activity className="h-4 w-4" />
+              }
               label="Total incidents"
               value={incidents.length}
               detail="Recorded incidents"
             />
           </section>
 
-          {/* Active incidents */}
+          {/* Open Incidents */}
           <section className="mb-10">
             <div className="mb-4">
               <h2 className="text-base font-medium text-white">
-                Active incidents
+                Open incidents
               </h2>
 
               <p className="mt-1 text-xs text-gray-600">
@@ -241,15 +267,15 @@ export default function Incidents() {
             </div>
 
             <IncidentTable
-              incidents={activeIncidents}
+              incidents={openIncidents}
               monitorMap={monitorMap}
               loading={loading}
-              emptyMessage="No active incidents. All monitored services are operational."
+              emptyMessage="No open incidents. All monitored services are operational."
               onSelect={setSelectedIncident}
             />
           </section>
 
-          {/* Incident history */}
+          {/* Incident History */}
           <section>
             <div className="mb-4">
               <h2 className="text-base font-medium text-white">
@@ -278,7 +304,9 @@ export default function Incidents() {
           monitor={
             monitorMap[selectedIncident.monitor_id]
           }
-          onClose={() => setSelectedIncident(null)}
+          onClose={() =>
+            setSelectedIncident(null)
+          }
         />
       )}
     </div>
@@ -347,7 +375,9 @@ function Sidebar({ open, onClose }) {
           </p>
 
           <SidebarItem
-            icon={<Activity className="h-4 w-4" />}
+            icon={
+              <Activity className="h-4 w-4" />
+            }
             label="Monitors"
             onClick={() => {
               window.location.href = "/"
@@ -363,7 +393,9 @@ function Sidebar({ open, onClose }) {
           />
 
           <SidebarItem
-            icon={<Clock3 className="h-4 w-4" />}
+            icon={
+              <Clock3 className="h-4 w-4" />
+            }
             label="Endpoints"
           />
 
@@ -374,7 +406,9 @@ function Sidebar({ open, onClose }) {
           </p>
 
           <SidebarItem
-            icon={<Activity className="h-4 w-4" />}
+            icon={
+              <Activity className="h-4 w-4" />
+            }
             label="Settings"
           />
         </div>
@@ -417,6 +451,7 @@ function SidebarItem({
       }`}
     >
       {icon}
+
       <span>{label}</span>
     </button>
   )
@@ -506,8 +541,8 @@ function IncidentTable({
           const monitor =
             monitorMap[incident.monitor_id]
 
-          const active =
-            incident.status === "active"
+          const open =
+            incident.status === "open"
 
           return (
             <button
@@ -521,7 +556,7 @@ function IncidentTable({
                   <div className="flex items-center gap-3">
                     <span
                       className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                        active
+                        open
                           ? "bg-red-400"
                           : "bg-emerald-400"
                       }`}
@@ -543,14 +578,16 @@ function IncidentTable({
 
                 {/* Status */}
                 <div>
-                  {active ? (
+                  {open ? (
                     <div className="flex items-center gap-2 text-xs font-medium text-red-400">
                       <AlertCircle className="h-3.5 w-3.5" />
-                      Active
+
+                      Open
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
                       <CheckCircle2 className="h-3.5 w-3.5" />
+
                       Resolved
                     </div>
                   )}
@@ -559,7 +596,9 @@ function IncidentTable({
                 {/* Started */}
                 <div>
                   <p className="text-xs text-gray-400">
-                    {formatDate(incident.started_at)}
+                    {formatDate(
+                      incident.started_at
+                    )}
                   </p>
 
                   <p className="mt-1 text-[10px] text-gray-700">
@@ -578,14 +617,14 @@ function IncidentTable({
                   </p>
 
                   <p className="mt-1 text-[10px] text-gray-700">
-                    {active
-                      ? "Still active"
+                    {open
+                      ? "Still open"
                       : "Resolved"}
                   </p>
                 </div>
               </div>
 
-              {/* Mobile details */}
+              {/* Mobile Details */}
               <div className="mt-4 grid grid-cols-2 gap-3 md:hidden">
                 <div className="rounded-lg bg-white/[0.025] p-3">
                   <p className="text-[10px] uppercase tracking-wide text-gray-700">
@@ -609,7 +648,7 @@ function IncidentTable({
                       ? formatDate(
                           incident.resolved_at
                         )
-                      : "Still active"}
+                      : "Still open"}
                   </p>
                 </div>
               </div>
@@ -630,7 +669,7 @@ function IncidentDetails({
   monitor,
   onClose,
 }) {
-  const active = incident.status === "active"
+  const open = incident.status === "open"
 
   const duration = calculateDuration(
     incident.started_at,
@@ -645,7 +684,7 @@ function IncidentDetails({
             <div className="flex items-center gap-3">
               <span
                 className={`h-2.5 w-2.5 rounded-full ${
-                  active
+                  open
                     ? "bg-red-400"
                     : "bg-emerald-400"
                 }`}
@@ -686,10 +725,12 @@ function IncidentDetails({
             <DetailStat
               label="Status"
               value={
-                active ? "Active" : "Resolved"
+                open
+                  ? "Open"
+                  : "Resolved"
               }
-              positive={!active}
-              danger={active}
+              positive={!open}
+              danger={open}
             />
 
             <DetailStat
@@ -715,7 +756,7 @@ function IncidentDetails({
                 </p>
 
                 <p className="mt-1 text-xs text-gray-600">
-                  {active
+                  {open
                     ? "The service has not recovered yet."
                     : `Service recovered at ${formatDate(
                         incident.resolved_at
@@ -770,7 +811,8 @@ function formatDate(value) {
 function calculateDuration(start, end) {
   if (!start) return "—"
 
-  const startTime = new Date(start).getTime()
+  const startTime =
+    new Date(start).getTime()
 
   const endTime = end
     ? new Date(end).getTime()
@@ -778,18 +820,28 @@ function calculateDuration(start, end) {
 
   const seconds = Math.max(
     0,
-    Math.floor((endTime - startTime) / 1000)
+    Math.floor(
+      (endTime - startTime) / 1000
+    )
   )
 
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
+  const minutes = Math.floor(
+    seconds / 60
+  )
+
+  const remainingSeconds =
+    seconds % 60
 
   if (minutes < 1) {
     return `${remainingSeconds}s`
   }
 
-  const hours = Math.floor(minutes / 60)
-  const remainingMinutes = minutes % 60
+  const hours = Math.floor(
+    minutes / 60
+  )
+
+  const remainingMinutes =
+    minutes % 60
 
   if (hours < 1) {
     return `${minutes}m`
@@ -816,4 +868,3 @@ function LoadingRows() {
     </div>
   )
 }
-

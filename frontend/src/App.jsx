@@ -9,6 +9,7 @@ import {
 import Login from "./Login"
 import Monitor from "./Monitor"
 import Incidents from "./Incidents"
+import Settings from "./Settings"
 
 function App() {
   const [token, setToken] = useState(
@@ -31,6 +32,8 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+
+        {/* Monitoring Dashboard */}
         <Route
           path="/"
           element={
@@ -38,6 +41,7 @@ function App() {
           }
         />
 
+        {/* Incidents */}
         <Route
           path="/incidents"
           element={
@@ -45,14 +49,23 @@ function App() {
           }
         />
 
+        {/* Settings */}
+        <Route
+          path="/settings"
+          element={
+            <Settings onLogout={handleLogout} />
+          }
+        />
+
+        {/* Unknown routes */}
         <Route
           path="*"
           element={<Navigate to="/" replace />}
         />
+
       </Routes>
     </BrowserRouter>
   )
 }
 
 export default App
-
