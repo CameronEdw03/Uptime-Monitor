@@ -4,7 +4,7 @@ import httpx
 import time
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
-from database import create_db_and_tables, get_session
+from database import get_session
 from models import (
     Monitor,
     CheckResult,
@@ -13,9 +13,11 @@ from models import (
     UserResponse,
     UserLogin,
     TokenResponse,
-    User
+    User,
+    UserUpdate,
+    PasswordUpdate
 )
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -56,7 +58,7 @@ scheduler = BackgroundScheduler()
 
 @app.on_event("startup")
 def on_startup():
-    create_db_and_tables()
+  
 
     session = next(get_session())
 
@@ -242,6 +244,48 @@ def read_check_results(
         .where(CheckResult.monitor_id == monitor_id)
     ).all()
 
+@app.get("/monitors/{monitor_id}/stats")
+def get_monitor_stats(
+    monitor_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    monitor = session.exec(
+        select(Monitor).where(
+            Monitor.id == monitor_id,
+            Monitor.user_id == current_user.id
+        )
+    ).first()
+
+    if not monitor:
+        raise HTTPException(
+            status_code=404,
+            detail="Monitor not found"
+        )
+
+    total_checks = session.exec(
+        select(func.count(CheckResult.id))
+        .where(CheckResult.monitor_id == monitor_id)
+    ).one()
+
+    successful_checks = session.exec(
+        select(func.count(CheckResult.id))
+        .where(
+            CheckResult.monitor_id == monitor_id,
+            CheckResult.is_up == True
+        )
+    ).one()
+
+    uptime_percentage = (
+        (successful_checks / total_checks) * 100
+        if total_checks > 0 else 0
+    )
+
+    return {
+        "total_checks": total_checks,
+        "successful_checks": successful_checks,
+        "uptime_percentage": uptime_percentage
+    }
 
 @app.get("/check_results")
 def read_all_check_results(
@@ -532,3 +576,149 @@ def login_user(
         "access_token": access_token,
         "token_type": "bearer",
     }
+
+@app.get("/users/me")
+def get_my_account(
+    current_user: User = Depends(get_current_user)
+):
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "role": current_user.role,
+        "email_notifications": current_user.email_notifications,
+        "incident_alerts": current_user.incident_alerts,
+        "maintenance_notifications": current_user.maintenance_notifications,
+    }
+
+
+@app.patch("/users/me")
+def update_my_account(
+    user_update: UserUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    if user_update.username is not None:
+        existing_username = session.exec(
+            select(User).where(
+                User.username == user_update.username,
+                User.id != current_user.id
+            )
+        ).first()
+
+        if existing_username:
+            raise HTTPException(
+                status_code=409,
+                detail="Username is already taken"
+            )
+
+        current_user.username = user_update.username
+
+    if user_update.email is not None:
+        existing_email = session.exec(
+            select(User).where(
+                User.email == user_update.email,
+                User.id != current_user.id
+            )
+        ).first()
+
+        if existing_email:
+            raise HTTPException(
+                status_code=409,
+                detail="Email is already registered"
+            )
+
+        current_user.email = user_update.email
+
+    if user_update.email_notifications is not None:
+        current_user.email_notifications = user_update.email_notifications
+
+    if user_update.incident_alerts is not None:
+        current_user.incident_alerts = user_update.incident_alerts
+
+    if user_update.maintenance_notifications is not None:
+        current_user.maintenance_notifications = (
+            user_update.maintenance_notifications
+        )
+
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+
+    return {
+        "message": "Account updated successfully",
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "role": current_user.role,
+            "email_notifications": current_user.email_notifications,
+            "incident_alerts": current_user.incident_alerts,
+            "maintenance_notifications": current_user.maintenance_notifications,
+        }
+    }
+
+@app.patch("/users/me/password")
+def update_my_password(
+    password_update: PasswordUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    if not verify_password(
+        password_update.current_password,
+        current_user.hashed_password
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Current password is incorrect"
+        )
+
+    if len(password_update.new_password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be at least 8 characters"
+        )
+
+    current_user.hashed_password = hash_password(
+        password_update.new_password
+    )
+
+    session.add(current_user)
+    session.commit()
+
+    return {
+        "message": "Password updated successfully"
+    }
+@app.get("/incidents/{incident_id}")
+def get_incident(
+    incident_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    incident = session.exec(
+        select(Incident).where(
+            Incident.id == incident_id,
+            Incident.monitor.has(Monitor.user_id == current_user.id)
+        )
+    ).first()
+
+    if not incident:
+        raise HTTPException(
+            status_code=404,
+            detail="Incident not found"
+        )
+
+    return incident
+
+@app.get("/incidents")
+def get_incidents(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    incidents = session.exec(
+        select(Incident).where(
+            Incident.monitor.has(Monitor.user_id == current_user.id)
+        )
+    ).all()
+
+    return incidents

@@ -2,6 +2,9 @@ from typing import Optional
 
 from sqlmodel import SQLModel, Field
 from datetime import datetime
+from alembic import op
+import sqlalchemy as sa
+
 
 class Monitor(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -9,6 +12,7 @@ class Monitor(SQLModel, table=True):
     url: str 
     check_interval: int
     expected_status: int
+    description: str | None = None
     user_id: int = Field(foreign_key="user.id")
 
 class CheckResult(SQLModel, table=True):
@@ -55,3 +59,18 @@ class User(SQLModel, table=True):
     email: str = Field(index=True, unique=True)
     hashed_password: str
     role: str = Field(default="help_desk", index=True)
+    email_notifications: bool = True
+    incident_alerts: bool = True 
+    maintenance_notifications: bool = True 
+
+class UserUpdate(SQLModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+    email_notifications: Optional[bool] = None
+    incident_alerts: Optional[bool] = None
+    maintenance_notifications: Optional[bool] = None
+
+class PasswordUpdate(SQLModel):
+    current_password: str 
+    new_password: str
