@@ -2,15 +2,13 @@
 
 A full-stack uptime and incident monitoring application that allows users to monitor websites and APIs, track uptime, measure response times, detect outages, and automatically manage incidents.
 
-This project is being built as a hands-on learning project for **FastAPI, Python, React, PostgreSQL, database migrations, background jobs, system design, SRE concepts, availability assurance, observability, and AWS**.
-
-The long-term goal is to deploy the application to AWS and use AWS services to handle infrastructure, monitoring, scheduling, storage, logging, observability, and notifications.
+This project was built as a hands-on learning project focused on **FastAPI, Python, React, Tailwind CSS, PostgreSQL, database migrations, background jobs, Docker, Kubernetes, system design, and Site Reliability Engineering (SRE) concepts**.
 
 ---
 
 # 🎯 Project Goal
 
-Build a SaaS platform where a user can:
+Build a SaaS-style monitoring platform where a user can:
 
 * Create an account
 * Log in securely
@@ -25,13 +23,24 @@ Build a SaaS platform where a user can:
 * Track active incidents
 * Automatically resolve incidents when services recover
 * View monitoring and incident data through a web dashboard
-* Receive outage notifications
 
-Eventually, users should be able to sign up and monitor their own applications through the platform.
+The project focuses on building a complete monitoring system from the application layer through the infrastructure layer using Docker and Kubernetes.
 
 ---
 
-# 🛠️ Current Tech Stack
+# 📸 Screenshots
+
+Application screenshots are included in the **`screenshots/`** folder.
+
+The folder contains screenshots showing:
+
+* Application dashboard overview
+* Creating a new monitor
+* Individual monitor overview and monitoring information
+
+---
+
+# 🛠️ Tech Stack
 
 ## Backend
 
@@ -55,58 +64,47 @@ Eventually, users should be able to sign up and monitor their own applications t
 * Tailwind CSS
 * Lucide React
 
+## Infrastructure
+
+* Docker
+* Docker Compose
+* Kubernetes
+* Minikube
+* Kubernetes Deployments
+* Kubernetes Services
+* Kubernetes Namespace
+* Nginx
+* Nginx Ingress Controller
+
 ## Database
 
-The application currently uses **PostgreSQL** for persistent application data.
-
-Database schema changes are managed using **Alembic migrations**.
-
-Current database tables include:
-
-* `user`
-* `monitor`
-* `checkresult`
-* `incident`
-
-### Database Migration Workflow
-
-When the database schema needs to change:
-
-```bash
-alembic revision --autogenerate -m "describe change"
-```
-
-Review the generated migration, then apply it:
-
-```bash
-alembic upgrade head
-```
-
-Check the current migration:
-
-```bash
-alembic current
-```
-
-Check whether the models and database are synchronized:
-
-```bash
-alembic check
-```
+* PostgreSQL
+* SQLModel
+* Alembic
 
 ---
 
-# 🚀 Current Features
+# 🚀 Features
 
 ## User Authentication
+
+The application includes user authentication and authorization.
+
+Features include:
 
 * User registration
 * User login
 * Password hashing
 * JWT access tokens
+* OAuth2 password flow
 * Protected API endpoints
 * User-specific monitors
-* User-specific incidents and monitoring results
+* User-specific incidents
+* User-specific monitoring results
+
+Users are only able to access and manage monitoring resources belonging to their account.
+
+---
 
 ## Monitor Management
 
@@ -120,6 +118,10 @@ Users can:
 * Configure monitoring intervals
 * Configure expected HTTP status codes
 * Add monitor descriptions
+
+Each monitor represents a website or API that the user wants to monitor.
+
+---
 
 ## Automated Monitoring
 
@@ -137,33 +139,43 @@ The monitoring system records:
 
 HTTP requests are performed using **HTTPX**.
 
+The scheduler automatically runs checks without requiring the user to manually trigger them.
+
+---
+
 ## Incident Management
 
-The application automatically creates an incident when a monitored service goes down.
+The application automatically creates an incident when a monitored service becomes unavailable.
 
 Incidents can:
 
 * Open when a service becomes unavailable
-* Remain open while the service is still down
-* Automatically resolve when the service recovers
+* Remain open while the service is down
+* Record the reason for the outage
 * Record when the incident started
+* Automatically resolve when the service recovers
 * Record when the incident was resolved
-* Store the reason for the outage
+
+This creates an incident lifecycle based on the actual health of the monitored service.
+
+---
 
 ## Monitoring Statistics
 
-The API provides monitoring statistics including:
+The application provides monitoring statistics including:
 
 * Total checks
 * Successful checks
 * Uptime percentage
 * Historical check results
+* Response times
+* HTTP status codes
 
 ---
 
 # 🧠 SRE Concepts Practiced
 
-This project is designed to provide hands-on experience with concepts commonly used in Site Reliability Engineering and production systems.
+This project provided hands-on experience with concepts commonly used in Site Reliability Engineering and production systems.
 
 Current concepts include:
 
@@ -176,27 +188,18 @@ Current concepts include:
 * Automated background jobs
 * Failure detection
 * Automatic recovery detection
-* Root-cause-oriented error information
 * Authentication and authorization
 * Database persistence
 * Database migrations
 * API design
 * Observability foundations
-
-Planned concepts include:
-
-* Service-level objectives (SLOs)
-* Service-level indicators (SLIs)
-* Alerting
-* Error budgets
-* Distributed monitoring
-* Centralized logging
-* Metrics
-* Tracing
-* Infrastructure as code
 * Containerization
 * Kubernetes deployment
-* AWS infrastructure
+* Service-to-service communication
+* Kubernetes networking
+* Ingress
+
+The project focuses on understanding how application reliability can be monitored and managed through automated health checks and incident tracking.
 
 ---
 
@@ -206,6 +209,7 @@ Planned concepts include:
 uptime-monitor/
 │
 ├── .gitignore
+├── docker-compose.yml
 │
 ├── backend/
 │   ├── alembic/
@@ -219,17 +223,37 @@ uptime-monitor/
 │   ├── models.py
 │   ├── requirements.txt
 │   ├── alembic.ini
-│   └── .env
+│   ├── Dockerfile
+│   └── .dockerignore
 │
-└── frontend/
-    ├── src/
-    │   ├── App.jsx
-    │   ├── Monitor.jsx
-    │   ├── index.css
-    │   └── main.jsx
-    │
-    ├── package.json
-    └── vite.config.js
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── Login.jsx
+│   │   ├── Monitor.jsx
+│   │   ├── Incidents.jsx
+│   │   ├── Settings.jsx
+│   │   ├── index.css
+│   │   └── main.jsx
+│   │
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── Dockerfile
+│   └── .dockerignore
+│
+├── k8s/
+│   ├── backend-deployment.yaml
+│   ├── backend-service.yaml
+│   ├── frontend-deployment.yaml
+│   ├── frontend-service.yaml
+│   ├── postgres-deployment.yaml
+│   ├── postgres-service.yaml
+│   └── ingress.yaml
+│
+└── screenshots/
+    ├── creating-a-monitor.png
+    ├── overview-of-monitor.png
+    └── overview.png
 ```
 
 > `.env` should never be committed to Git. It contains environment-specific configuration such as database credentials and secrets.
@@ -240,7 +264,7 @@ uptime-monitor/
 
 The backend is built using FastAPI.
 
-The API currently supports functionality for:
+The API supports functionality for:
 
 * User registration
 * Authentication
@@ -253,6 +277,27 @@ The API currently supports functionality for:
 * Monitoring statistics
 * Incident management
 
+Example endpoints:
+
+```text
+POST   /users
+POST   /login
+
+GET    /monitors
+POST   /monitors
+GET    /monitors/{monitor_id}
+PATCH  /monitors/{monitor_id}
+DELETE /monitors/{monitor_id}
+
+GET    /monitors/{monitor_id}/check_results
+POST   /monitors/{monitor_id}/check_results
+
+GET    /monitors/{monitor_id}/stats
+
+GET    /incidents
+GET    /incidents/{incident_id}
+```
+
 Interactive API documentation is available through FastAPI:
 
 ```text
@@ -263,7 +308,7 @@ http://127.0.0.1:8000/docs
 
 # 🗄️ Database Architecture
 
-The application uses PostgreSQL as the primary relational database.
+The application uses **PostgreSQL** as the primary relational database.
 
 Current high-level relationships:
 
@@ -284,11 +329,43 @@ Each monitor can have:
 * Many check results
 * Multiple incidents over its lifetime
 
+The database provides persistent storage for monitoring and incident history.
+
+---
+
+# 🔄 Database Migrations
+
+Database schema changes are managed using **Alembic**.
+
+Create a migration:
+
+```bash
+alembic revision --autogenerate -m "describe change"
+```
+
+Apply migrations:
+
+```bash
+alembic upgrade head
+```
+
+Check the current migration:
+
+```bash
+alembic current
+```
+
+Check whether the models and database are synchronized:
+
+```bash
+alembic check
+```
+
 ---
 
 # ⏱️ Monitoring Architecture
 
-The current monitoring flow is:
+The monitoring system follows this workflow:
 
 ```text
 Monitor
@@ -303,7 +380,7 @@ HTTPX Request
 Target Website / API
    │
    ▼
-Check Result
+Evaluate Response
    │
    ├── Up ────────► Save successful check
    │
@@ -319,19 +396,115 @@ Check Result
                  Resolve Incident
 ```
 
+Each monitoring check is stored in PostgreSQL, allowing the application to maintain historical monitoring information.
+
 ---
 
-# 🔐 Environment Configuration
+# 🐳 Containerization
 
-The backend uses environment variables for sensitive configuration.
+The application is containerized using Docker.
 
-Example:
+The project includes separate containers for:
 
-```env
-DATABASE_URL=postgresql+psycopg://username:password@localhost:5432/uptime_monitor
+* React frontend
+* FastAPI backend
+* PostgreSQL database
+
+The frontend uses a multi-stage Docker build where the React application is built and then served through Nginx.
+
+The backend runs FastAPI through Uvicorn.
+
+Docker Compose configuration is also included for running the application's services together.
+
+---
+
+# ☸️ Kubernetes Deployment
+
+The completed application was deployed locally using **Kubernetes through Minikube**.
+
+The Kubernetes environment contains separate workloads for:
+
+* React frontend
+* FastAPI backend
+* PostgreSQL database
+
+The application resources are organized within the:
+
+```text
+uptime-monitor
 ```
 
-The `.env` file should remain local and should be included in `.gitignore`.
+Kubernetes namespace.
+
+---
+
+## Kubernetes Architecture
+
+```text
+                    Minikube
+                       │
+                uptime-monitor
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+        ▼              ▼              ▼
+    Frontend        Backend       PostgreSQL
+    React/Nginx      FastAPI
+        │              │              │
+        └────── Services ────────────┘
+```
+
+---
+
+## Kubernetes Components
+
+### Deployments
+
+Separate Kubernetes Deployments are used for:
+
+* Frontend
+* Backend
+* PostgreSQL
+
+Deployments manage the application's Pods and provide the desired running state for each component.
+
+### Services
+
+Kubernetes Services provide stable networking between the application components.
+
+Services are used for:
+
+* Frontend
+* Backend
+* PostgreSQL
+
+The FastAPI backend communicates with PostgreSQL through the Kubernetes Service rather than using `localhost`.
+
+### Namespace
+
+The application's Kubernetes resources are contained within the:
+
+```text
+uptime-monitor
+```
+
+namespace.
+
+### Ingress
+
+The project uses the **Nginx Ingress Controller** to route application traffic.
+
+The intended routing structure is:
+
+```text
+uptime.local
+     │
+     ├── /api/* ──────► FastAPI Backend
+     │
+     └── /* ──────────► React Frontend
+```
+
+This allows the frontend and backend to be accessed through the same application entry point.
 
 ---
 
@@ -343,6 +516,12 @@ Navigate to the backend:
 
 ```bash
 cd backend
+```
+
+Create a virtual environment:
+
+```bash
+python -m venv venv
 ```
 
 Activate the virtual environment:
@@ -361,6 +540,18 @@ Start FastAPI:
 
 ```bash
 uvicorn main:app --reload
+```
+
+The API will be available at:
+
+```text
+http://127.0.0.1:8000
+```
+
+Swagger documentation:
+
+```text
+http://127.0.0.1:8000/docs
 ```
 
 ---
@@ -387,177 +578,173 @@ npm run dev
 
 ---
 
-# ☁️ AWS Roadmap
+# ☸️ Running with Kubernetes
 
-The long-term goal is to deploy the application to AWS and gradually replace local development infrastructure with production cloud services.
+Start Minikube:
 
-Planned AWS services include:
+```bash
+minikube start
+```
 
-### Compute
+Create the namespace:
 
-* AWS EC2 and/or ECS
-* AWS Lambda
+```bash
+kubectl create namespace uptime-monitor
+```
 
-### Database
+Deploy the Kubernetes resources:
 
-* Amazon RDS for PostgreSQL
+```bash
+kubectl apply -f k8s/
+```
 
-### Scheduling
+Check Pods:
 
-* Amazon EventBridge
+```bash
+kubectl get pods -n uptime-monitor
+```
 
-### Monitoring & Observability
+Check Services:
 
-* Amazon CloudWatch
-* Application metrics
-* Centralized logging
+```bash
+kubectl get services -n uptime-monitor
+```
 
-### Notifications
+Check Deployments:
 
-* Amazon SNS
-* Amazon SES
+```bash
+kubectl get deployments -n uptime-monitor
+```
 
-### Storage
+Check Ingress:
 
-* Amazon S3
-
----
-
-# 🐳 Infrastructure Roadmap
-
-Future infrastructure goals include:
-
-* Docker
-* Docker Compose
-* Kubernetes
-* AWS deployment
-* Infrastructure as Code
-* Terraform
-* CI/CD
-* Production PostgreSQL
-* Automated deployments
-* Application logging
-* Metrics collection
-* Prometheus
-* Grafana
+```bash
+kubectl get ingress -n uptime-monitor
+```
 
 ---
 
-# 📈 Planned Features
+# 📊 What This Project Demonstrates
 
-Future development may include:
+Uptime Monitor demonstrates experience across multiple layers of modern application development:
 
-* Monitor maintenance windows
-* Email notifications
-* Incident alert preferences
-* SLO and SLI tracking
-* Response-time graphs
-* Uptime history graphs
-* Incident history
-* Public status pages
-* API monitoring
-* Custom HTTP methods
-* Request headers
-* Authentication for monitored APIs
-* SSL certificate monitoring
-* Domain expiration monitoring
-* Advanced alerting
-* Notification integrations
-* Team accounts
-* Role-based access control
-* Multi-tenant architecture
-* Public monitoring status pages
-
----
-
-# 🎓 Learning Objectives
-
-The primary purpose of this project is to gain practical experience building and operating a production-style application.
-
-Key areas of learning include:
-
-### Software Development
+### Application Development
 
 * Python
 * FastAPI
 * React
 * REST APIs
 * Authentication
-* Database design
 * Full-stack application architecture
 
-### Databases
+### Database Development
 
 * PostgreSQL
 * SQLModel
-* SQL queries
-* Relationships
+* Relational data modeling
 * Foreign keys
-* Database migrations
-* Alembic
+* Database relationships
+* Alembic migrations
 
-### SRE / Infrastructure
+### Reliability Engineering
 
-* Availability
-* Monitoring
-* Incident management
+* Availability monitoring
 * Health checks
-* Background jobs
-* Observability
-* Reliability engineering
+* Uptime calculations
+* Response-time monitoring
+* Failure detection
+* Incident management
+* Automated recovery detection
+* Background scheduling
 
-### Cloud
+### Infrastructure
 
-* AWS
-* Cloud architecture
-* Managed databases
-* Cloud monitoring
-* Serverless services
-* Infrastructure as Code
-* Containerized deployments
+* Docker
+* Docker Compose
+* Kubernetes
+* Minikube
+* Kubernetes Deployments
+* Kubernetes Services
+* Kubernetes DNS
+* Nginx
+* Nginx Ingress
+
+---
+
+# 🎓 Learning Objectives
+
+The primary purpose of this project was to gain practical experience building a full-stack application and deploying it using containerized infrastructure.
+
+Key areas of learning included:
+
+* Building APIs with FastAPI
+* Building interfaces with React and Tailwind CSS
+* Designing relational database models
+* Working with PostgreSQL
+* Managing database migrations with Alembic
+* Implementing JWT authentication
+* Implementing OAuth2 authentication flows
+* Creating automated background jobs
+* Performing HTTP health checks
+* Tracking service availability
+* Designing incident lifecycles
+* Containerizing applications with Docker
+* Deploying applications with Kubernetes
+* Working with Kubernetes Deployments and Services
+* Using Kubernetes DNS for service communication
+* Configuring Nginx Ingress
+* Troubleshooting application and Kubernetes networking
 
 ---
 
 # 🚧 Project Status
 
-**Status: Active Development**
+**Status: Completed**
 
-Current major milestones:
+The current version includes:
 
-* [x] FastAPI backend
-* [x] React frontend
-* [x] PostgreSQL database
-* [x] User authentication
-* [x] JWT authentication
-* [x] Monitor creation
-* [x] Monitor management
-* [x] Automated monitoring
-* [x] Response-time tracking
-* [x] Check-result storage
-* [x] Automatic incident creation
-* [x] Automatic incident resolution
-* [x] Monitoring statistics
-* [x] APScheduler background jobs
-* [x] Alembic database migrations
-* [x] PostgreSQL migration from SQLite
-* [ ] Notification system
-* [ ] SLO / SLI monitoring
-* [ ] Advanced observability
-* [ ] Docker deployment
-* [ ] Kubernetes deployment
-* [ ] AWS deployment
-* [ ] Terraform infrastructure
-* [ ] CI/CD pipeline
+* FastAPI backend
+* React frontend
+* Tailwind CSS interface
+* PostgreSQL database
+* SQLModel database models
+* Alembic database migrations
+* User registration
+* User authentication
+* JWT authentication
+* Protected API endpoints
+* Monitor creation
+* Monitor management
+* Configurable monitoring intervals
+* Expected HTTP status configuration
+* Automated monitoring
+* Response-time tracking
+* Historical check results
+* Uptime statistics
+* Automatic incident creation
+* Automatic incident resolution
+* Docker containerization
+* Docker Compose configuration
+* Kubernetes deployment
+* Kubernetes Deployments
+* Kubernetes Services
+* Kubernetes namespace
+* PostgreSQL running in Kubernetes
+* Nginx frontend container
+* Nginx Ingress Controller
+* Local Minikube deployment
+* Application screenshots
 
 ---
 
 # 📌 Project Vision
 
-The goal is to evolve this project from a local full-stack learning application into a production-style monitoring platform.
+Uptime Monitor was built to demonstrate how a monitoring application can be developed from the application layer through the infrastructure layer.
 
-The final architecture is intended to demonstrate practical knowledge across:
+The project combines:
 
-**Software Development → Databases → APIs → SRE → Observability → Kubernetes → AWS → Infrastructure as Code**
+**Software Development → APIs → PostgreSQL → Automated Monitoring → Incident Management → Docker → Kubernetes**
 
-The project is intentionally being built incrementally so that each technology is implemented and understood before moving to the next layer.
+The completed project provides a practical example of building a full-stack application while applying Site Reliability Engineering principles to service monitoring, failure detection, and incident management.
+
 
