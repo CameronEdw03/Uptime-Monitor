@@ -1,0 +1,47 @@
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: uptime-monitor-postgres
+
+    environment:
+      POSTGRES_DB: uptime_monitor
+      POSTGRES_USER: uptime_user
+      POSTGRES_PASSWORD: local_dev_password
+
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uptime_user -d uptime_monitor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: uptime-monitor-backend
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://uptime_user:local_dev_password@postgres:5432/uptime_monitor
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: uptime-monitor-frontend
+
+    ports:
+      - "5173:80"
+
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+

@@ -21,7 +21,7 @@ import {
   Zap,
 } from "lucide-react"
 
-const API_URL = "http://127.0.0.1:8000"
+const API_URL = "/api"
 
 export default function Monitor() {
   const [monitors, setMonitors] = useState([])

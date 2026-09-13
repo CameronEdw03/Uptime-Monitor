@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uptime-monitor-postgres
+  namespace: uptime-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: uptime-monitor-postgres
+  template:
+    metadata:
+      labels:
+        app: uptime-monitor-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: uptime_monitor
+
+            - name: POSTGRES_USER
+              value: uptime_user
+
+            - name: POSTGRES_PASSWORD
+              value: local_dev_password
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: uptime-monitor-postgres
+  namespace: uptime-monitor
+spec:
+  selector:
+    app: uptime-monitor-postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP

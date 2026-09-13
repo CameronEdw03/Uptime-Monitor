@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uptime-monitor-frontend
+  namespace: uptime-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: uptime-monitor-frontend
+  template:
+    metadata:
+      labels:
+        app: uptime-monitor-frontend
+    spec:
+      containers:
+        - name: uptime-monitor-frontend
+          image: uptime-monitor-frontend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 80
